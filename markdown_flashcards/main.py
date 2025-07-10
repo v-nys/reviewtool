@@ -29,7 +29,8 @@ ANSWER_OPTIONS = ["Unable to answer", "Hard", "Easy", "Very easy"]
 LOGGER = logging.getLogger(__name__)
 START_OF_OCCLUSION_REGEX = re.compile(
     r"£{c(?P<occlusion_number>\d+):(?P<start_of_occluded_text>)"
-)  # e.g. £{c2: without the }, extra } to avoid confusing editor
+)  # e.g. £{c2: without the }, extra } to avoid confusing the editor in which you are viewing this
+Confirm.prompt_suffix = ""
 
 logging.basicConfig(filename="markdown-flashcards.log", level=logging.DEBUG)
 
@@ -396,18 +397,17 @@ def quiz(directory):
                     raw_text = fh.read()
 
                     frontmatter_card = frontmatter.loads(raw_text)
-                    # frontmatter_card = Frontmatter.read(raw_text)
-                    # metadata = frontmatter_card["attributes"]
                     if card_type == CardTypes.NORMAL:
                         normal_card_match = normal_card_regex.match(raw_text)
                         card = NormalCard(
                             relative_path,
                             frontmatter_card.get("tags", []),
-                            # metadata.get("tags", []),
                             nx.descendants(dependency_graph, relative_path),
-                            datetime.datetime.fromisoformat(db_entry[2]),
-                            int(db_entry[3]),
-                            datetime.timedelta(seconds=int(db_entry[4])),
+                            db_entry[2]
+                            and datetime.datetime.fromisoformat(db_entry[2]),
+                            db_entry[3] and int(db_entry[3]),
+                            db_entry[4]
+                            and datetime.timedelta(seconds=int(db_entry[4])),
                             normal_card_match.group("front"),
                             normal_card_match.group("back"),
                         )
@@ -420,11 +420,12 @@ def quiz(directory):
                             ClozeVariant(
                                 relative_path,
                                 frontmatter_card.get("tags", []),
-                                # metadata.get("tags", []),
                                 nx.descendants(dependency_graph, relative_path),
-                                datetime.datetime.fromisoformat(db_entry[2]),
-                                int(db_entry[3]),
-                                datetime.timedelta(seconds=int(db_entry[4])),
+                                db_entry[2]
+                                and datetime.datetime.fromisoformat(db_entry[2]),
+                                db_entry[3] and int(db_entry[3]),
+                                db_entry[4]
+                                and datetime.timedelta(seconds=int(db_entry[4])),
                                 cloze_match.group("front"),
                                 db_entry[1],
                             )
@@ -502,13 +503,21 @@ def quiz(directory):
     while queue_item and queue_item.is_due_today:
         LOGGER.info(queue_item)
         console.print(queue_item.get_displayed_question())
-        Confirm.ask("Enter anything to continue", default=True)
+        console.print("")
+        Confirm.ask(
+            "Press ENTER to display the answer",
+            default=True,
+            show_default=False,
+            show_choices=False,
+        )
         console.print(queue_item.get_displayed_answer())
-        table = Table(title="Options")
+        table = Table(title=None)
         table.add_column("Number", justify="right")
         table.add_column("Option", justify="left")
         for index, option in enumerate(ANSWER_OPTIONS, start=1):
             table.add_row(str(index), option)
+        console.print("")
+
         console.print(table)
         confidence_score = IntPrompt.ask(
             "Select an option",
@@ -518,6 +527,7 @@ def quiz(directory):
         priority_queue.put(updated_version)
         updated_version.upsert(cur)
         con.commit()
+        console.print("")
         queue_item = priority_queue.get()
     # TODO: can this be more of a "finally" thing?
     cur.close()
