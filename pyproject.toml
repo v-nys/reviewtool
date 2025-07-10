@@ -1,0 +1,24 @@
+[tool.poetry]
+name = "markdown-flashcards"
+version = "0.1.0"
+description = ""
+authors = ["Vincent Nys <vincentnys@gmail.com>"]
+readme = "README.md"
+license = "MIT"
+packages = [
+  { include = "markdown_flashcards" }
+]
+
+[tool.poetry.scripts]
+mdflashcards = "markdown_flashcards:main"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+rich = "^14.0.0"
+click = "^8.1.8"
+networkx = "^3.4.2"
+python-frontmatter = "^1.1.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
