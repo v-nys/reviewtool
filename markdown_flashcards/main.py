@@ -31,7 +31,7 @@ START_OF_OCCLUSION_REGEX = re.compile(
     r"£{c(?P<occlusion_number>\d+):(?P<start_of_occluded_text>)"
 )  # e.g. £{c2: without the }, extra } to avoid confusing editor
 
-logging.basicConfig(filename="markdown-flashcards.log", level=logging.INFO)
+logging.basicConfig(filename="markdown-flashcards.log", level=logging.DEBUG)
 
 
 def splice_until_matching_curly_bracket(remaining_text):
@@ -395,13 +395,15 @@ def quiz(directory):
                 with open(card_path) as fh:
                     raw_text = fh.read()
 
-                    frontmatter_card = Frontmatter.read(raw_text)
-                    metadata = frontmatter_card["attributes"]
+                    frontmatter_card = frontmatter.loads(raw_text)
+                    # frontmatter_card = Frontmatter.read(raw_text)
+                    # metadata = frontmatter_card["attributes"]
                     if card_type == CardTypes.NORMAL:
                         normal_card_match = normal_card_regex.match(raw_text)
                         card = NormalCard(
                             relative_path,
-                            metadata.get("tags", []),
+                            frontmatter_card.get("tags", []),
+                            # metadata.get("tags", []),
                             nx.descendants(dependency_graph, relative_path),
                             datetime.datetime.fromisoformat(db_entry[2]),
                             int(db_entry[3]),
@@ -417,7 +419,8 @@ def quiz(directory):
                         cards = [
                             ClozeVariant(
                                 relative_path,
-                                metadata.get("tags", []),
+                                frontmatter_card.get("tags", []),
+                                # metadata.get("tags", []),
                                 nx.descendants(dependency_graph, relative_path),
                                 datetime.datetime.fromisoformat(db_entry[2]),
                                 int(db_entry[3]),
@@ -431,16 +434,19 @@ def quiz(directory):
                             priority_queue.put(card)
         else:
             # no entries, so need to read card to create suitable entry
+            logging.debug(f"reading {card_path}")
             with open(card_path) as fh:
                 raw_text = fh.read()
                 normal_card_match = normal_card_regex.match(raw_text)
                 cloze_match = cloze_regex.match(raw_text)
                 if normal_card_match:
-                    frontmatter_card = Frontmatter.read(raw_text)
-                    metadata = frontmatter_card["attributes"]
+                    frontmatter_card = frontmatter.loads(raw_text)
+                    # frontmatter_card = Frontmatter.read(raw_text)
+                    # metadata = frontmatter_card["attributes"]
                     card = NormalCard(
                         relative_path,
-                        metadata.get("tags", []),
+                        frontmatter_card.get("tags", []),
+                        # metadata.get("tags", []),
                         nx.descendants(dependency_graph, relative_path),
                         None,
                         None,
@@ -453,8 +459,9 @@ def quiz(directory):
                     priority_queue.put(card)
                 elif cloze_match:
                     # FIXME: this is repeated from earlier
-                    frontmatter_card = Frontmatter.read(raw_text)
-                    metadata = frontmatter_card["attributes"]
+                    frontmatter_card = frontmatter.loads(raw_text)
+                    # frontmatter_card = Frontmatter.read(raw_text)
+                    # metadata = frontmatter_card["attributes"]
                     start_of_occlusion_matches = list(
                         START_OF_OCCLUSION_REGEX.finditer(raw_text)
                     )
@@ -465,13 +472,13 @@ def quiz(directory):
                         continue
                     else:
                         occlusion_numbers = {
-                            occlusion_match.group("number")
+                            occlusion_match.group("occlusion_number")
                             for occlusion_match in start_of_occlusion_matches
                         }
                         cards = [
                             ClozeVariant(
                                 relative_path,
-                                metadata.get("tags", []),
+                                frontmatter_card.get("tags", []),
                                 nx.descendants(dependency_graph, relative_path),
                                 None,
                                 None,
