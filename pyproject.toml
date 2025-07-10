@@ -10,7 +10,7 @@ packages = [
 ]
 
 [tool.poetry.scripts]
-mdflashcards = "markdown_flashcards:main"
+mdflashcards = "markdown_flashcards.main:quiz"
 
 [tool.poetry.dependencies]
 python = "^3.12"

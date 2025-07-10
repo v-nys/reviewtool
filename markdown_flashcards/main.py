@@ -13,7 +13,7 @@ from functools import total_ordering
 import datetime
 from abc import abstractmethod
 import networkx as nx  # type: ignore
-from frontmatter import Frontmatter  # type: ignore
+import frontmatter  # type: ignore
 import logging
 
 
@@ -27,7 +27,9 @@ TODAY = START_TIME.date()
 ONE_DAY = datetime.timedelta(days=1)
 ANSWER_OPTIONS = ["Unable to answer", "Hard", "Easy", "Very easy"]
 LOGGER = logging.getLogger(__name__)
-START_OF_OCCLUSION_REGEX = re.compile(r"£{c(?P<occlusion_number>\d+):(?P<start_of_occluded_text>)")  # e.g. £{c2: without the }, extra } to avoid confusing editor
+START_OF_OCCLUSION_REGEX = re.compile(
+    r"£{c(?P<occlusion_number>\d+):(?P<start_of_occluded_text>)"
+)  # e.g. £{c2: without the }, extra } to avoid confusing editor
 
 logging.basicConfig(filename="markdown-flashcards.log", level=logging.INFO)
 
@@ -48,8 +50,9 @@ def splice_until_matching_curly_bracket(remaining_text):
             case _other:
                 pass
         if opening_curly_brackets == 0:
-            return remaining_text[:index+1]
+            return remaining_text[: index + 1]
     return None
+
 
 @total_ordering
 class Card(ABC):
@@ -241,7 +244,9 @@ class ClozeVariant(Card):
         replacement_pairs = []
         for match in start_of_occlusion_matches:
             start_index = match.start("start_of_occluded_text")
-            until_curly_bracket = splice_until_matching_curly_bracket(self.front[start_index:])
+            until_curly_bracket = splice_until_matching_curly_bracket(
+                self.front[start_index:]
+            )
             if not until_curly_bracket:
                 return Markdown("Error: mismatched opening occlusion")
             elif int(match.group("occlusion_number")) == self.variant_number:
@@ -251,7 +256,7 @@ class ClozeVariant(Card):
                 whole_occlusion = match.group(0) + until_curly_bracket
                 replacement_pairs.append((whole_occlusion, until_curly_bracket[:-1]))
         displayed = str(self.front)
-        for (replacee, replacer) in replacement_pairs:
+        for replacee, replacer in replacement_pairs:
             displayed = displayed.replace(replacee, replacer)
         return Markdown(displayed)
 
@@ -260,14 +265,16 @@ class ClozeVariant(Card):
         replacement_pairs = []
         for match in start_of_occlusion_matches:
             start_index = match.start("start_of_occluded_text")
-            until_curly_bracket = splice_until_matching_curly_bracket(self.front[start_index:])
+            until_curly_bracket = splice_until_matching_curly_bracket(
+                self.front[start_index:]
+            )
             if not until_curly_bracket:
                 return Markdown("Error: mismatched opening occlusion")
             else:
                 whole_occlusion = match.group(0) + until_curly_bracket
                 replacement_pairs.append((whole_occlusion, until_curly_bracket[:-1]))
         displayed = str(self.front)
-        for (replacee, replacer) in replacement_pairs:
+        for replacee, replacer in replacement_pairs:
             displayed = displayed.replace(replacee, replacer)
         return Markdown(displayed)
 
@@ -355,11 +362,10 @@ def quiz(directory):
     dependency_graph = nx.DiGraph()
     for card_path in card_paths:
         LOGGER.debug(f"Adding {card_path} to dependency graph.")
-        card = Frontmatter.read_file(card_path)
+        card = frontmatter.load(card_path)
         card_relative_path = card_path.relative_to(directory)
         dependency_graph.add_node(str(card_relative_path))
-        metadata = card["attributes"]
-        for dependency in metadata.get("dependencies", []):
+        for dependency in card.get("dependencies", []):
             dependency_graph.add_node(str(dependency))
             dependency_graph.add_edge(str(card_relative_path), str(dependency))
     LOGGER.debug(f"Dependency graph: {dependency_graph}")
@@ -388,6 +394,7 @@ def quiz(directory):
                 card_type = card_types.pop()
                 with open(card_path) as fh:
                     raw_text = fh.read()
+
                     frontmatter_card = Frontmatter.read(raw_text)
                     metadata = frontmatter_card["attributes"]
                     if card_type == CardTypes.NORMAL:
@@ -448,7 +455,9 @@ def quiz(directory):
                     # FIXME: this is repeated from earlier
                     frontmatter_card = Frontmatter.read(raw_text)
                     metadata = frontmatter_card["attributes"]
-                    start_of_occlusion_matches = list(START_OF_OCCLUSION_REGEX.finditer(raw_text))
+                    start_of_occlusion_matches = list(
+                        START_OF_OCCLUSION_REGEX.finditer(raw_text)
+                    )
                     if not start_of_occlusion_matches:
                         print(
                             f"Cloze card {relative_path} does not contain any occlusions."
