@@ -32,7 +32,7 @@ START_OF_OCCLUSION_REGEX = re.compile(
 )  # e.g. £{c2: without the }, extra } to avoid confusing the editor in which you are viewing this
 Confirm.prompt_suffix = ""
 
-logging.basicConfig(filename="markdown-flashcards.log", level=logging.DEBUG)
+logging.basicConfig(level=logging.WARNING)
 
 
 def splice_until_matching_curly_bracket(remaining_text):
