@@ -502,6 +502,7 @@ def quiz(directory):
     console = Console()
     while queue_item and queue_item.is_due_today:
         LOGGER.info(queue_item)
+        console.print(f"(From {str(pathlib.Path(queue_item.relative_path).parent)})")
         console.print(queue_item.get_displayed_question())
         console.print("")
         Confirm.ask(
