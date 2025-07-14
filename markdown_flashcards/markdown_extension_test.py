@@ -34,6 +34,9 @@ def patched_init(
     self.inline_code_theme = inline_code_theme or code_theme
 
 
+# TODO: check whether I can produce a custom element and control its rendering
+# if so, I can do cloze deletions and answers
+
 # replace with version without tested features
 Markdown.__init__ = patched_init
 displayed_text = Markdown("""# Test
@@ -44,5 +47,4 @@ Tekst met ~~strikethrough~~
 |------------|------------|
 | data 1     | data 2     |
 """)
-# zou geen rendering van strikethrough en table verwachten...
 console.print(displayed_text)
