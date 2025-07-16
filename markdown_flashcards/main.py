@@ -15,6 +15,7 @@ from abc import abstractmethod
 import networkx as nx  # type: ignore
 import frontmatter  # type: ignore
 import logging
+from textual_image.renderable import Image
 
 
 class CardTypes(str, Enum):
@@ -24,6 +25,7 @@ class CardTypes(str, Enum):
 
 START_TIME = datetime.datetime.now()
 TODAY = START_TIME.date()
+MIDNIGHT = datetime.time(0, 0, 0)
 ONE_DAY = datetime.timedelta(days=1)
 ANSWER_OPTIONS = ["Unable to answer", "Hard", "Easy", "Very easy"]
 LOGGER = logging.getLogger(__name__)
@@ -92,7 +94,9 @@ class Card(ABC):
                             self.last_review_date + (self.previous_time_delta * 1.25),
                             self.last_review_date + datetime.timedelta(days=365 // 2),
                         ),
-                        TODAY + ONE_DAY,
+                        datetime.datetime.combine(
+                            self.last_review_date.date() + ONE_DAY, MIDNIGHT
+                        ),
                     )
                 case 4:
                     return max(
@@ -100,7 +104,9 @@ class Card(ABC):
                             self.last_review_date + (self.previous_time_delta * 2),
                             self.last_review_date + datetime.timedelta(days=365),
                         ),
-                        TODAY + (ONE_DAY * 2),
+                        datetime.datetime.combine(
+                            self.last_review_date.date() + (ONE_DAY * 2), MIDNIGHT
+                        ),
                     )
         assert False, "Cases are exhaustive."
 
@@ -503,6 +509,7 @@ def quiz(directory):
     queue_item = priority_queue.get()
     console = Console()
     console.clear()
+    console.print(Image("/home/vincentn/Pictures/groenebol.png"))
     while queue_item:
         LOGGER.info(queue_item)
         LOGGER.info(f"Due {queue_item.due_date}")
