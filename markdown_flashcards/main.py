@@ -7,7 +7,7 @@ from rich.console import Console  # type: ignore
 from rich.markdown import Markdown  # type: ignore
 import re
 from enum import Enum
-from queue import PriorityQueue
+from queue import PriorityQueue, Empty
 from abc import ABC
 from functools import total_ordering
 import datetime
@@ -32,7 +32,9 @@ START_OF_OCCLUSION_REGEX = re.compile(
 )  # e.g. £{c2: without the }, extra } to avoid confusing the editor in which you are viewing this
 Confirm.prompt_suffix = ""
 
-logging.basicConfig(level=logging.WARNING)
+logging.basicConfig(
+    level=logging.INFO, filemode="w", filename="markdown-flashcards.log"
+)
 
 
 def splice_until_matching_curly_bracket(remaining_text):
@@ -67,7 +69,7 @@ class Card(ABC):
         return self.due_date.date() <= TODAY
 
     @property
-    def due_date(self):
+    def due_date(self) -> datetime.datetime:
         if not (
             self.last_review_date and self.confidence_score and self.previous_time_delta
         ):
@@ -76,31 +78,23 @@ class Card(ABC):
             match self.confidence_score:
                 case 1:
                     return START_TIME
+
                 case 2:
-                    return min(
-                        START_TIME + datetime.timedelta(minutes=3),
-                        START_TIME + (self.previous_time_delta * 0.8),
+                    return max(
+                        self.last_review_date + datetime.timedelta(minutes=3),
+                        self.last_review_date + (self.previous_time_delta * 0.8),
                     )
                 case 3:
                     return min(
-                        max(
-                            datetime.datetime.combine(TODAY, datetime.time(0, 0))
-                            + ONE_DAY,
-                            START_TIME + (self.previous_time_delta * 1.25),
-                        ),
-                        datetime.datetime.combine(TODAY, datetime.time(0, 0))
-                        + ONE_DAY * 365,
+                        self.last_review_date + (self.previous_time_delta * 1.25),
+                        self.last_review_date + datetime.timedelta(days=365 // 2),
                     )
                 case 4:
                     return min(
-                        max(
-                            datetime.datetime.combine(TODAY, datetime.time(0, 0))
-                            + (ONE_DAY * 2),
-                            START_TIME + (self.previous_time_delta * 2),
-                        ),
-                        datetime.datetime.combine(TODAY, datetime.time(0, 0))
-                        + ONE_DAY * 365,
+                        self.last_review_date + (self.previous_time_delta * 2),
+                        self.last_review_date + datetime.timedelta(days=365),
                     )
+        assert False, "Cases are exhaustive."
 
     def __init__(
         self,
@@ -500,38 +494,48 @@ def quiz(directory):
                     continue
     queue_item = priority_queue.get()
     console = Console()
-    while queue_item and queue_item.is_due_today:
+    console.clear()
+    while queue_item:
         LOGGER.info(queue_item)
-        console.print(f"(From {str(pathlib.Path(queue_item.relative_path).parent)})")
-        console.print(queue_item.get_displayed_question())
-        console.print("")
-        Confirm.ask(
-            "Press ENTER to display the answer",
-            default=True,
-            show_default=False,
-            show_choices=False,
-        )
-        console.print(queue_item.get_displayed_answer())
-        table = Table(title=None)
-        table.add_column("Number", justify="right")
-        table.add_column("Option", justify="left")
-        for index, option in enumerate(ANSWER_OPTIONS, start=1):
-            table.add_row(str(index), option)
-        console.print("")
+        LOGGER.info(f"Due {queue_item.due_date}")
+        if queue_item.is_due_today:
+            console.print(
+                f"(From {str(pathlib.Path(queue_item.relative_path).parent)})"
+            )
+            console.print(queue_item.get_displayed_question())
+            console.print("")
+            Confirm.ask(
+                "Press ENTER to display the answer",
+                default=True,
+                show_default=False,
+                show_choices=False,
+            )
+            console.print(queue_item.get_displayed_answer())
+            table = Table(title=None)
+            table.add_column("Number", justify="right")
+            table.add_column("Option", justify="left")
+            for index, option in enumerate(ANSWER_OPTIONS, start=1):
+                table.add_row(str(index), option)
+            console.print("")
 
-        console.print(table)
-        confidence_score = IntPrompt.ask(
-            "Select an option",
-            choices=[str(i) for i in range(1, len(ANSWER_OPTIONS) + 1)],
-        )
-        updated_version = queue_item.update_with_confidence_score(confidence_score)
-        priority_queue.put(updated_version)
-        updated_version.upsert(cur)
-        con.commit()
-        console.print("")
-        queue_item = priority_queue.get()
-    # TODO: can this be more of a "finally" thing?
-    cur.close()
+            console.print(table)
+            confidence_score = IntPrompt.ask(
+                "Select an option",
+                choices=[str(i) for i in range(1, len(ANSWER_OPTIONS) + 1)],
+            )
+            updated_version = queue_item.update_with_confidence_score(confidence_score)
+            LOGGER.info(
+                f"Due date for review of {queue_item.relative_path}: {updated_version.due_date}"
+            )
+            priority_queue.put(updated_version)
+            updated_version.upsert(cur)
+            con.commit()
+            console.clear()
+        try:
+            queue_item = priority_queue.get(block=False)
+        except Empty:
+            cur.close()
+            break
 
 
 if __name__ == "__main__":
