@@ -85,14 +85,22 @@ class Card(ABC):
                         self.last_review_date + (self.previous_time_delta * 0.8),
                     )
                 case 3:
-                    return min(
-                        self.last_review_date + (self.previous_time_delta * 1.25),
-                        self.last_review_date + datetime.timedelta(days=365 // 2),
+                    # always postpone until at least tomorrow
+                    # otherwise, we might still have to review (multiple times) today if gap was small
+                    return max(
+                        min(
+                            self.last_review_date + (self.previous_time_delta * 1.25),
+                            self.last_review_date + datetime.timedelta(days=365 // 2),
+                        ),
+                        TODAY + ONE_DAY,
                     )
                 case 4:
-                    return min(
-                        self.last_review_date + (self.previous_time_delta * 2),
-                        self.last_review_date + datetime.timedelta(days=365),
+                    return max(
+                        min(
+                            self.last_review_date + (self.previous_time_delta * 2),
+                            self.last_review_date + datetime.timedelta(days=365),
+                        ),
+                        TODAY + (ONE_DAY * 2),
                     )
         assert False, "Cases are exhaustive."
 
