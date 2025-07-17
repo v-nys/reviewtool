@@ -360,12 +360,19 @@ def quiz(directory):
     relative_paths = cur.execute("select RelativePath from Cards")
     for (relative_path,) in relative_paths.fetchall():
         if not (directory / relative_path).exists():
-            # TODO: prompt to delete from DB?
             print(
                 f"Path is mentioned in DB but lacks a Markdown file counterpart: {relative_path}"
             )
+            should_delete = Confirm.ask("Delete entry from database?")
+            if should_delete:
+                cur.execute(
+                    """delete from Cards where RelativePath=?""", (relative_path,)
+                )
 
-    card_paths = list(directory.glob("**/*.md"))
+    card_paths = set(directory.glob("**/*.md"))
+    relative_card_paths = [
+        card_path.relative_path(directory) for card_path in card_paths
+    ]
     LOGGER.debug(f"Card paths: {card_paths}")
 
     # need to collect these in first pass because each card specifies all its dependencies
@@ -377,8 +384,13 @@ def quiz(directory):
         card_relative_path = card_path.relative_to(directory)
         dependency_graph.add_node(str(card_relative_path))
         for dependency in card.get("dependencies", []):
-            dependency_graph.add_node(str(dependency))
-            dependency_graph.add_edge(str(card_relative_path), str(dependency))
+            if dependency not in relative_card_paths:
+                LOGGER.warning(
+                    f"{dependency} is mentioned as a dependency of {card_relative_path}, but there is no Markdown file with this path (relative to the overall cards directory. Ignoring the dependency (and potential transitive dependencies)."
+                )
+            else:
+                dependency_graph.add_node(str(dependency))
+                dependency_graph.add_edge(str(card_relative_path), str(dependency))
     LOGGER.debug(f"Dependency graph: {dependency_graph}")
     LOGGER.debug(f"Nodes: {dependency_graph.nodes}")
 
@@ -403,6 +415,7 @@ def quiz(directory):
                 db_entry = db_entries_for_card[0]
                 LOGGER.info(f"DB entry for single card type: {db_entry}")
                 card_type = card_types.pop()
+                # TODO: check whether database info matches file info
                 with open(card_path) as fh:
                     raw_text = fh.read()
 
