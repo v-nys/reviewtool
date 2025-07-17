@@ -15,7 +15,7 @@ from abc import abstractmethod
 import networkx as nx  # type: ignore
 import frontmatter  # type: ignore
 import logging
-from textual_image.renderable import Image
+# from textual_image.renderable import Image
 
 
 class CardTypes(str, Enum):
@@ -89,24 +89,26 @@ class Card(ABC):
                 case 3:
                     # always postpone until at least tomorrow
                     # otherwise, we might still have to review (multiple times) today if gap was small
-                    return max(
-                        min(
-                            self.last_review_date + (self.previous_time_delta * 1.25),
-                            self.last_review_date + datetime.timedelta(days=365 // 2),
+                    return min(
+                        (
+                            self.last_review_date + (self.previous_time_delta * 1.25)
+                            if self.previous_time_delta >= datetime.timedelta(days=4)
+                            else datetime.datetime.combine(
+                                self.last_review_date.date() + ONE_DAY, MIDNIGHT
+                            )
                         ),
-                        datetime.datetime.combine(
-                            self.last_review_date.date() + ONE_DAY, MIDNIGHT
-                        ),
+                        self.last_review_date + datetime.timedelta(days=365 // 2),
                     )
                 case 4:
-                    return max(
-                        min(
-                            self.last_review_date + (self.previous_time_delta * 2),
-                            self.last_review_date + datetime.timedelta(days=365),
+                    return min(
+                        (
+                            self.last_review_date + (self.previous_time_delta * 2)
+                            if self.previous_time_delta >= datetime.timedelta(days=1)
+                            else datetime.datetime.combine(
+                                self.last_review_date.date() + (ONE_DAY * 2), MIDNIGHT
+                            )
                         ),
-                        datetime.datetime.combine(
-                            self.last_review_date.date() + (ONE_DAY * 2), MIDNIGHT
-                        ),
+                        self.last_review_date + datetime.timedelta(days=365),
                     )
         assert False, "Cases are exhaustive."
 
@@ -509,7 +511,7 @@ def quiz(directory):
     queue_item = priority_queue.get()
     console = Console()
     console.clear()
-    console.print(Image("/home/vincentn/Pictures/groenebol.png"))
+    # console.print(Image("/home/vincentn/Pictures/groenebol.png"))
     while queue_item:
         LOGGER.info(queue_item)
         LOGGER.info(f"Due {queue_item.due_date}")

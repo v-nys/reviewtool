@@ -35,7 +35,7 @@
             projectDir = self;
             python = python;
             dependencies = [
-              pkgs.${system}.python312Packages.textual-image
+              # pkgs.${system}.python312Packages.textual-image
             ];
           };
         }
@@ -59,7 +59,7 @@
                 projectDir = self;
                 python = python;
               })
-              python312Packages.textual-image
+              # python312Packages.textual-image
               poetry
             ];
           };
