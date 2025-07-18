@@ -370,9 +370,7 @@ def quiz(directory):
                 )
 
     card_paths = set(directory.glob("**/*.md"))
-    relative_card_paths = [
-        card_path.relative_path(directory) for card_path in card_paths
-    ]
+    relative_card_paths = [card_path.relative_to(directory) for card_path in card_paths]
     LOGGER.debug(f"Card paths: {card_paths}")
 
     # need to collect these in first pass because each card specifies all its dependencies
