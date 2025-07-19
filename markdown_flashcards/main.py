@@ -251,9 +251,14 @@ class ClozeVariant(Card):
         self.variant_number = variant_number
 
     def get_displayed_question(self):
+        LOGGER.debug(
+            f"Displaying a Cloze card. Variant number is {self.variant_number}"
+        )
         start_of_occlusion_matches = START_OF_OCCLUSION_REGEX.finditer(self.front)
+        LOGGER.debug(f"This is the front: {self.front}")
         replacement_pairs = []
         for match in start_of_occlusion_matches:
+            LOGGER.debug(match)
             start_index = match.start("start_of_occluded_text")
             until_curly_bracket = splice_until_matching_curly_bracket(
                 self.front[start_index:]
@@ -261,12 +266,15 @@ class ClozeVariant(Card):
             if not until_curly_bracket:
                 return Markdown("Error: mismatched opening occlusion")
             elif int(match.group("occlusion_number")) == self.variant_number:
+                LOGGER.debug("Occluding.")
                 whole_occlusion = match.group(0) + until_curly_bracket
                 replacement_pairs.append((whole_occlusion, "[...]"))
             else:
+                LOGGER.debug("Not occluding.")
                 whole_occlusion = match.group(0) + until_curly_bracket
                 replacement_pairs.append((whole_occlusion, until_curly_bracket[:-1]))
         displayed = str(self.front)
+        LOGGER.debug(f"Replacement pairs are: {replacement_pairs}")
         for replacee, replacer in replacement_pairs:
             displayed = displayed.replace(replacee, replacer)
         return Markdown(displayed)
