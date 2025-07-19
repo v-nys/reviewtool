@@ -17,7 +17,7 @@ import frontmatter  # type: ignore
 import logging
 
 # from textual_image.renderable import Image
-from typing import List
+from typing import List, Set
 
 
 class CardTypes(str, Enum):
@@ -330,6 +330,16 @@ class ClozeVariant(Card):
         )
 
 
+def normalize_dependency_path(
+    directory: pathlib.Path, card_path: pathlib.Path, dependency: str
+) -> str:
+    if not (dependency.startswith("./") or dependency.startswith("../")):
+        return dependency
+    else:
+        dependency_relative_to_card = (card_path.parent / dependency).resolve()
+        return str(dependency_relative_to_card.relative_to(directory, walk_up=True))
+
+
 @click.command()
 @click.argument(
     "directory",
@@ -380,9 +390,9 @@ def quiz(directory):
                     """delete from Cards where RelativePath=?""", (relative_path,)
                 )
 
-    card_paths = set(directory.glob("**/*.md"))
+    card_paths: Set[pathlib.Path] = set(directory.glob("**/*.md"))
     relative_card_paths: List[str] = [
-        str(card_path.relative_to(directory)) for card_path in card_paths
+        str(card_path.relative_to(directory, walk_up=True)) for card_path in card_paths
     ]
     LOGGER.debug(f"Card paths: {card_paths}")
 
@@ -392,9 +402,10 @@ def quiz(directory):
     for card_path in card_paths:
         LOGGER.debug(f"Adding {card_path} to dependency graph.")
         card = frontmatter.load(card_path)
-        card_relative_path = card_path.relative_to(directory)
+        card_relative_path = card_path.relative_to(directory, walk_up=True)
         dependency_graph.add_node(str(card_relative_path))
         for dependency in card.get("dependencies", []):
+            dependency = normalize_dependency_path(directory, card_path, dependency)
             if dependency not in relative_card_paths:
                 LOGGER.warning(
                     f"{dependency} is mentioned as a dependency of {card_relative_path}, but there is no Markdown file with this path (relative to the overall cards directory. Ignoring the dependency (and potential transitive dependencies)."
@@ -408,7 +419,7 @@ def quiz(directory):
 
     priority_queue = PriorityQueue()
     for card_path in card_paths:
-        relative_path = str(card_path.relative_to(directory))
+        relative_path = str(card_path.relative_to(directory, walk_up=True))
         cur.execute(
             "select CardType, ClozeVariant, LastReviewDate, ConfidenceScore, PreviousTimeDelta from Cards where RelativePath=?",
             (relative_path,),
