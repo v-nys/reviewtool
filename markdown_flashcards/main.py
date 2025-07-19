@@ -35,7 +35,7 @@ START_OF_OCCLUSION_REGEX = re.compile(
 Confirm.prompt_suffix = ""
 
 logging.basicConfig(
-    level=logging.INFO, filemode="w", filename="markdown-flashcards.log"
+    level=logging.DEBUG, filemode="w", filename="markdown-flashcards.log"
 )
 
 
@@ -252,13 +252,14 @@ class ClozeVariant(Card):
 
     def get_displayed_question(self):
         LOGGER.debug(
-            f"Displaying a Cloze card. Variant number is {self.variant_number}"
+            f"Displaying a Cloze card. Variant number is {self.variant_number}. Type of self.variant_number is {type(self.variant_number)}"
         )
         start_of_occlusion_matches = START_OF_OCCLUSION_REGEX.finditer(self.front)
         LOGGER.debug(f"This is the front: {self.front}")
         replacement_pairs = []
         for match in start_of_occlusion_matches:
             LOGGER.debug(match)
+            LOGGER.debug(f"occlusion number group: {match.group('occlusion_number')}")
             start_index = match.start("start_of_occluded_text")
             until_curly_bracket = splice_until_matching_curly_bracket(
                 self.front[start_index:]
@@ -502,7 +503,7 @@ def quiz(directory):
                         continue
                     else:
                         occlusion_numbers = {
-                            occlusion_match.group("occlusion_number")
+                            int(occlusion_match.group("occlusion_number"))
                             for occlusion_match in start_of_occlusion_matches
                         }
                         cards = [
