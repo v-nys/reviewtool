@@ -15,7 +15,9 @@ from abc import abstractmethod
 import networkx as nx  # type: ignore
 import frontmatter  # type: ignore
 import logging
+
 # from textual_image.renderable import Image
+from typing import List
 
 
 class CardTypes(str, Enum):
@@ -379,7 +381,9 @@ def quiz(directory):
                 )
 
     card_paths = set(directory.glob("**/*.md"))
-    relative_card_paths = [card_path.relative_to(directory) for card_path in card_paths]
+    relative_card_paths: List[str] = [
+        str(card_path.relative_to(directory)) for card_path in card_paths
+    ]
     LOGGER.debug(f"Card paths: {card_paths}")
 
     # need to collect these in first pass because each card specifies all its dependencies
@@ -395,6 +399,7 @@ def quiz(directory):
                 LOGGER.warning(
                     f"{dependency} is mentioned as a dependency of {card_relative_path}, but there is no Markdown file with this path (relative to the overall cards directory. Ignoring the dependency (and potential transitive dependencies)."
                 )
+                LOGGER.warning(f"all relative card paths: {relative_card_paths}")
             else:
                 dependency_graph.add_node(str(dependency))
                 dependency_graph.add_edge(str(card_relative_path), str(dependency))
