@@ -2,7 +2,7 @@ import click  # type: ignore
 from rich.table import Table  # type: ignore
 from rich.prompt import Confirm, IntPrompt  # type: ignore
 import sqlite3
-import pathlib
+from pathlib import Path
 from rich.console import Console  # type: ignore
 from rich.markdown import Markdown  # type: ignore
 import re
@@ -16,8 +16,8 @@ import networkx as nx  # type: ignore
 import frontmatter  # type: ignore
 import logging
 
-# from textual_image.renderable import Image
-from typing import List, Set
+from textual_image.renderable import Image  # type: ignore
+from typing import List, Set, Union
 
 
 class CardTypes(str, Enum):
@@ -34,6 +34,7 @@ LOGGER = logging.getLogger(__name__)
 START_OF_OCCLUSION_REGEX = re.compile(
     r"£{c(?P<occlusion_number>\d+):(?P<start_of_occluded_text>)"
 )  # e.g. £{c2: without the }, extra } to avoid confusing the editor in which you are viewing this
+MD_IMG_REGEX = re.compile(r"!\[[^\]]*\]\((?P<path>[^\)]*)\)")
 Confirm.prompt_suffix = ""
 
 logging.basicConfig(
@@ -59,6 +60,30 @@ def splice_until_matching_curly_bracket(remaining_text):
         if opening_curly_brackets == 0:
             return remaining_text[: index + 1]
     return None
+
+
+def substitute_images_in_md_text(
+    directory: Path, relative_card_path: Path, source: str
+) -> List[Union[Markdown, Image]]:
+    # would be nicer if this was actually based on parse tree
+    # but this'll work fine in practice
+    document_path = directory / relative_card_path
+    segments = MD_IMG_REGEX.split(source)
+    replacements = []
+    for index, segment in enumerate(segments, start=0):
+        LOGGER.debug(f"Processing segment {segment}")
+        if index % 2:
+            image_path = segment
+            if image_path.startswith("./") or image_path.startswith("../"):
+                absolute_image_path = (document_path.parent / image_path).resolve()
+            elif image_path.startswith("/"):
+                absolute_image_path = Path(image_path).resolve()
+            else:
+                absolute_image_path = (directory / image_path).resolve()
+            replacements.append(Image(absolute_image_path))
+        else:
+            replacements.append(Markdown(segment))
+    return replacements
 
 
 @total_ordering
@@ -155,11 +180,15 @@ class Card(ABC):
             return self.due_date < other.due_date
 
     @abstractmethod
-    def get_displayed_question(self):
+    def get_displayed_question(
+        self, topics_directory: Path
+    ) -> List[Union[Markdown, Image]]:
         return NotImplemented
 
     @abstractmethod
-    def get_displayed_answer(self):
+    def get_displayed_answer(
+        self, topics_directory: Path
+    ) -> List[Union[Markdown, Image]]:
         return NotImplemented
 
     @abstractmethod
@@ -194,11 +223,15 @@ class NormalCard(Card):
         self.front = front
         self.back = back
 
-    def get_displayed_question(self):
-        return Markdown(self.front)
+    def get_displayed_question(self, topics_directory):
+        return substitute_images_in_md_text(
+            topics_directory, self.relative_path, self.front
+        )
 
-    def get_displayed_answer(self):
-        return Markdown(self.back)
+    def get_displayed_answer(self, topics_directory):
+        return substitute_images_in_md_text(
+            topics_directory, self.relative_path, self.back
+        )
 
     def update_with_confidence_score(self, score):
         now = datetime.datetime.now()
@@ -252,7 +285,7 @@ class ClozeVariant(Card):
         self.front = front
         self.variant_number = variant_number
 
-    def get_displayed_question(self):
+    def get_displayed_question(self, topics_directory):
         LOGGER.debug(
             f"Displaying a Cloze card. Variant number is {self.variant_number}. Type of self.variant_number is {type(self.variant_number)}"
         )
@@ -267,7 +300,7 @@ class ClozeVariant(Card):
                 self.front[start_index:]
             )
             if not until_curly_bracket:
-                return Markdown("Error: mismatched opening occlusion")
+                return [Markdown("Error: mismatched opening occlusion")]
             elif int(match.group("occlusion_number")) == self.variant_number:
                 LOGGER.debug("Occluding.")
                 whole_occlusion = match.group(0) + until_curly_bracket
@@ -280,9 +313,11 @@ class ClozeVariant(Card):
         LOGGER.debug(f"Replacement pairs are: {replacement_pairs}")
         for replacee, replacer in replacement_pairs:
             displayed = displayed.replace(replacee, replacer)
-        return Markdown(displayed)
+        return substitute_images_in_md_text(
+            topics_directory, self.relative_path, displayed
+        )
 
-    def get_displayed_answer(self):
+    def get_displayed_answer(self, topics_directory):
         start_of_occlusion_matches = START_OF_OCCLUSION_REGEX.finditer(self.front)
         replacement_pairs = []
         for match in start_of_occlusion_matches:
@@ -291,14 +326,16 @@ class ClozeVariant(Card):
                 self.front[start_index:]
             )
             if not until_curly_bracket:
-                return Markdown("Error: mismatched opening occlusion")
+                return [Markdown("Error: mismatched opening occlusion")]
             else:
                 whole_occlusion = match.group(0) + until_curly_bracket
                 replacement_pairs.append((whole_occlusion, until_curly_bracket[:-1]))
         displayed = str(self.front)
         for replacee, replacer in replacement_pairs:
             displayed = displayed.replace(replacee, replacer)
-        return Markdown(displayed)
+        return substitute_images_in_md_text(
+            topics_directory, self.relative_path, displayed
+        )
 
     def update_with_confidence_score(self, score):
         now = datetime.datetime.now()
@@ -330,9 +367,7 @@ class ClozeVariant(Card):
         )
 
 
-def normalize_dependency_path(
-    directory: pathlib.Path, card_path: pathlib.Path, dependency: str
-) -> str:
+def normalize_dependency_path(directory: Path, card_path: Path, dependency: str) -> str:
     if not (dependency.startswith("./") or dependency.startswith("../")):
         return dependency
     else:
@@ -349,7 +384,7 @@ def normalize_dependency_path(
         file_okay=False,
         dir_okay=True,
         readable=True,
-        path_type=pathlib.Path,
+        path_type=Path,
     ),
 )
 def quiz(directory):
@@ -389,8 +424,9 @@ def quiz(directory):
                 cur.execute(
                     """delete from Cards where RelativePath=?""", (relative_path,)
                 )
+                con.commit()
 
-    card_paths: Set[pathlib.Path] = set(directory.glob("**/*.md"))
+    card_paths: Set[Path] = set(directory.glob("**/*.md"))
     relative_card_paths: List[str] = [
         str(card_path.relative_to(directory, walk_up=True)) for card_path in card_paths
     ]
@@ -584,10 +620,11 @@ def quiz(directory):
         LOGGER.info(queue_item)
         LOGGER.info(f"Due {queue_item.due_date}")
         if queue_item.is_due_today:
-            console.print(
-                f"(From {str(pathlib.Path(queue_item.relative_path).parent)})"
-            )
-            console.print(queue_item.get_displayed_question())
+            console.print(f"(From {str(Path(queue_item.relative_path).parent)})")
+            components = queue_item.get_displayed_question(directory)
+            for component in components:
+                LOGGER.debug(f"Dit is de component: {component}")
+                console.print(component)
             console.print("")
             Confirm.ask(
                 "Press ENTER to display the answer",
@@ -595,7 +632,9 @@ def quiz(directory):
                 show_default=False,
                 show_choices=False,
             )
-            console.print(queue_item.get_displayed_answer())
+            components = queue_item.get_displayed_answer(directory)
+            for component in components:
+                console.print(component)
             table = Table(title=None)
             table.add_column("Number", justify="right")
             table.add_column("Option", justify="left")
