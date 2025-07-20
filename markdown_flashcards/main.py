@@ -407,7 +407,7 @@ def quiz(directory):
         for dependency in card.get("dependencies", []):
             dependency = normalize_dependency_path(directory, card_path, dependency)
             if dependency not in relative_card_paths:
-                LOGGER.warning(
+                LOGGER.error(
                     f"{dependency} is mentioned as a dependency of {card_relative_path}, but there is no Markdown file with this path (relative to the overall cards directory. Ignoring the dependency (and potential transitive dependencies)."
                 )
                 LOGGER.warning(f"all relative card paths: {relative_card_paths}")
@@ -418,6 +418,7 @@ def quiz(directory):
     LOGGER.debug(f"Nodes: {dependency_graph.nodes}")
 
     priority_queue = PriorityQueue()
+    # card_paths here is based on located MD files
     for card_path in card_paths:
         relative_path = str(card_path.relative_to(directory, walk_up=True))
         cur.execute(
@@ -428,42 +429,28 @@ def quiz(directory):
         db_entries_for_card = list(cur.fetchall())
         LOGGER.info(f"DB entries for card {card_path}: {db_entries_for_card}")
         if db_entries_for_card:
-            card_types = {db_entry[0] for db_entry in db_entries_for_card}
+            # want to access via index but also don't want duplicates, so list({...})
+            card_types = list({db_entry[0] for db_entry in db_entries_for_card})
             if len(card_types) > 1:
                 print(
                     f"Database specifies multiple types for the card {card_path}. This is not allowed."
                 )
                 continue
+            elif card_types[0] == CardTypes.NORMAL and len(db_entries_for_card) > 1:
+                print(
+                    f"Card {card_path} is a regular card according to DB, but there are multiple records for it. Only in the case of cloze variants can there be multiple entries for the same card."
+                )
             else:
                 db_entry = db_entries_for_card[0]
                 LOGGER.info(f"DB entry for single card type: {db_entry}")
                 card_type = card_types.pop()
-                # TODO: check whether database info matches file info
                 with open(card_path) as fh:
                     raw_text = fh.read()
-
                     frontmatter_card = frontmatter.loads(raw_text)
                     if card_type == CardTypes.NORMAL:
                         normal_card_match = normal_card_regex.match(raw_text)
-                        card = NormalCard(
-                            relative_path,
-                            frontmatter_card.get("tags", []),
-                            nx.descendants(dependency_graph, relative_path),
-                            db_entry[2]
-                            and datetime.datetime.fromisoformat(db_entry[2]),
-                            db_entry[3] and int(db_entry[3]),
-                            db_entry[4]
-                            and datetime.timedelta(seconds=int(db_entry[4])),
-                            normal_card_match.group("front"),
-                            normal_card_match.group("back"),
-                        )
-                        priority_queue.put(card)
-                    elif card_type == CardTypes.CLOZE:
-                        cloze_match = cloze_regex.match(raw_text)
-                        # no need to check for occlusion matches
-                        # assuming the card has not been changed
-                        cards = [
-                            ClozeVariant(
+                        if normal_card_match:
+                            card = NormalCard(
                                 relative_path,
                                 frontmatter_card.get("tags", []),
                                 nx.descendants(dependency_graph, relative_path),
@@ -472,13 +459,58 @@ def quiz(directory):
                                 db_entry[3] and int(db_entry[3]),
                                 db_entry[4]
                                 and datetime.timedelta(seconds=int(db_entry[4])),
-                                cloze_match.group("front"),
-                                db_entry[1],
+                                normal_card_match.group("front"),
+                                normal_card_match.group("back"),
                             )
-                            for db_entry in db_entries_for_card
-                        ]
-                        for card in cards:
                             priority_queue.put(card)
+                        else:
+                            LOGGER.error(
+                                f"Card at {card_path} should be a regular flash card according to DB but does not match the regular expression for a regular flash card. It will not go into the queue. You should either fix the card or remove the database entry."
+                            )
+                    elif card_type == CardTypes.CLOZE:
+                        cloze_match = cloze_regex.match(raw_text)
+                        if cloze_match:
+                            start_of_occlusion_matches = list(
+                                START_OF_OCCLUSION_REGEX.finditer(raw_text)
+                            )
+                            occlusion_numbers_in_file = {
+                                int(occlusion_match.group("occlusion_number"))
+                                for occlusion_match in start_of_occlusion_matches
+                            }
+                            occlusion_numbers_in_db = {
+                                int(db_entry[1]) for db_entry in db_entries_for_card
+                            }
+                            if occlusion_numbers_in_file == occlusion_numbers_in_db:
+                                cards = [
+                                    ClozeVariant(
+                                        relative_path,
+                                        frontmatter_card.get("tags", []),
+                                        nx.descendants(dependency_graph, relative_path),
+                                        db_entry[2]
+                                        and datetime.datetime.fromisoformat(
+                                            db_entry[2]
+                                        ),
+                                        db_entry[3] and int(db_entry[3]),
+                                        db_entry[4]
+                                        and datetime.timedelta(
+                                            seconds=int(db_entry[4])
+                                        ),
+                                        cloze_match.group("front"),
+                                        db_entry[1],
+                                    )
+                                    for db_entry in db_entries_for_card
+                                ]
+                                for card in cards:
+                                    priority_queue.put(card)
+                            else:
+                                LOGGER.error(
+                                    f"Card at {card_path} does not use the same occlusion numbers {occlusion_numbers_in_db} that are mentioned in the database. Its variants will not go into the queue. You should update the database records or change the file to use precisely the aforementioned occlusion numbers."
+                                )
+
+                        else:
+                            LOGGER.error(
+                                f"Card at {card_path} should be a cloze card according to DB but does not match the regular expression for a cloze card. It will not go into the queue. You should either fix the card or remove the database entries for its variants."
+                            )
         else:
             # no entries, so need to read card to create suitable entry
             logging.debug(f"reading {card_path}")
@@ -546,7 +578,7 @@ def quiz(directory):
                     continue
     queue_item = priority_queue.get()
     console = Console()
-    console.clear()
+    # console.clear()
     # console.print(Image("/home/vincentn/Pictures/groenebol.png"))
     while queue_item:
         LOGGER.info(queue_item)
@@ -583,7 +615,8 @@ def quiz(directory):
             priority_queue.put(updated_version)
             updated_version.upsert(cur)
             con.commit()
-            console.clear()
+            console.print("")
+            # console.clear()
         try:
             queue_item = priority_queue.get(block=False)
         except Empty:
