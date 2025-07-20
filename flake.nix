@@ -23,43 +23,51 @@
         system:
         let
           python = pkgs.${system}.python312;
-          inherit
-            (poetry2nix.lib.mkPoetry2Nix {
+          p2nix = (
+            poetry2nix.lib.mkPoetry2Nix {
               pkgs = pkgs.${system};
-            })
-            mkPoetryApplication
-            ;
+            }
+          );
         in
         {
-          default = mkPoetryApplication {
+          default = p2nix.mkPoetryApplication {
             projectDir = self;
             python = python;
-            dependencies = [
-              # pkgs.${system}.python312Packages.textual-image
-            ];
+            overrides = p2nix.overrides.withDefaults (
+              self: super: {
+                textual-image = super.textual-image.overridePythonAttrs (old: {
+                  buildInputs = (old.buildInputs or [ ]) ++ [ super.setuptools ];
+                });
+              }
+            );
           };
         }
       );
-
       devShells = forAllSystems (
         system:
         let
           python = pkgs.${system}.python312;
-          inherit
-            (poetry2nix.lib.mkPoetry2Nix {
+          p2nix = (
+            poetry2nix.lib.mkPoetry2Nix {
               pkgs = pkgs.${system};
-            })
-            mkPoetryEnv
-            ;
+            }
+          );
         in
         {
           default = pkgs.${system}.mkShellNoCC {
             packages = with pkgs.${system}; [
-              (mkPoetryEnv {
+              (p2nix.mkPoetryEnv {
                 projectDir = self;
                 python = python;
+                overrides = p2nix.overrides.withDefaults (
+                  self: super: {
+                    textual-image = super.textual-image.overridePythonAttrs (old: {
+                      buildInputs = (old.buildInputs or [ ]) ++ [ super.setuptools ];
+                    });
+                  }
+                );
+
               })
-              # python312Packages.textual-image
               poetry
             ];
           };
