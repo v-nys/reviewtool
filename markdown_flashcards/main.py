@@ -621,6 +621,10 @@ def quiz(directory):
         LOGGER.info(f"Due {queue_item.due_date}")
         if queue_item.is_due_today:
             console.print(f"(From {str(Path(queue_item.relative_path).parent)})")
+            if queue_item.last_review_date:
+                console.print(
+                    f"(Last reviewed {queue_item.last_review_date.isoformat()}, confidence score was {queue_item.confidence_score})"
+                )
             components = queue_item.get_displayed_question(directory)
             for component in components:
                 LOGGER.debug(f"Dit is de component: {component}")

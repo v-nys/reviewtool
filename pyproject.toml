@@ -10,7 +10,7 @@ packages = [
 ]
 
 [tool.poetry.scripts]
-mdflashcards = "markdown_flashcards.main:quiz"
+markdown-flashcards = "markdown_flashcards.main:quiz"
 
 [tool.poetry.dependencies]
 python = "^3.12"
@@ -23,4 +23,4 @@ textual-image = "^0.8.3"
 
 [build-system]
 requires = ["poetry-core", "setuptools"]
-build-backend = "setuptools.build_meta"
+build-backend = "poetry.core.masonry.api"
