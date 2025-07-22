@@ -615,7 +615,6 @@ def quiz(directory):
     queue_item = priority_queue.get()
     console = Console()
     # console.clear()
-    # console.print(Image("/home/vincentn/Pictures/groenebol.png"))
     while queue_item:
         LOGGER.info(queue_item)
         LOGGER.info(f"Due {queue_item.due_date}")
@@ -652,6 +651,7 @@ def quiz(directory):
                 choices=[str(i) for i in range(1, len(ANSWER_OPTIONS) + 1)],
             )
             updated_version = queue_item.update_with_confidence_score(confidence_score)
+            console.print(f"Due date for review: {updated_version.due_date}")
             LOGGER.info(
                 f"Due date for review of {queue_item.relative_path}: {updated_version.due_date}"
             )
