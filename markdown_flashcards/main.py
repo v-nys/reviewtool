@@ -75,7 +75,7 @@ def round_timedelta_days_up(timedelta):
         # would be inconsistent to just change the object here
         return datetime.timedelta(seconds=timedelta.total_seconds())
     else:
-        return datetime.timedelta(seconds=math.ceil(days_in_timedelta * 24 * 60 * 60))
+        return datetime.timedelta(seconds=math.ceil(days_in_timedelta) * 24 * 60 * 60)
 
 
 def substitute_images_in_md_text(
@@ -649,7 +649,7 @@ def quiz(directory):
             console.print(f"(From {str(Path(queue_item.relative_path).parent)})")
             if queue_item.last_review_date:
                 console.print(
-                    f"(Last reviewed {queue_item.last_review_date.isoformat()}, confidence score was {queue_item.confidence_score})"
+                    f"(Last reviewed {queue_item.last_review_date.isoformat()}, previous time delta was {queue_item.previous_time_delta}, confidence score was {queue_item.confidence_score})"
                 )
             components = queue_item.get_displayed_question(directory)
             for component in components:
