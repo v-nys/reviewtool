@@ -1,5 +1,6 @@
 import click  # type: ignore
 from rich.table import Table  # type: ignore
+import math
 from rich.prompt import Confirm, IntPrompt  # type: ignore
 import sqlite3
 from pathlib import Path
@@ -62,6 +63,21 @@ def splice_until_matching_curly_bracket(remaining_text):
     return None
 
 
+def round_timedelta_days_up(timedelta):
+    # this is a bit trickier than it seems
+    # e.g. a timedelta of 3 weeks and 2 days has 0 for the "milliseconds" property
+    # total_seconds() does work
+    # but it's only for seconds
+    # but, to be fair, we don't need millisecond level accuracy here
+    days_in_timedelta = timedelta.total_seconds() / 60 / 60 / 24
+    if (days_in_timedelta).is_integer():
+        # make a (rough) copy because the other branch definitely returns a new object
+        # would be inconsistent to just change the object here
+        return datetime.timedelta(seconds=timedelta.total_seconds())
+    else:
+        return datetime.timedelta(seconds=math.ceil(days_in_timedelta * 24 * 60 * 60))
+
+
 def substitute_images_in_md_text(
     directory: Path, relative_card_path: Path, source: str
 ) -> List[Union[Markdown, Image]]:
@@ -120,8 +136,19 @@ class Card(ABC):
                         (
                             self.last_review_date + (self.previous_time_delta * 1.25)
                             if self.previous_time_delta >= datetime.timedelta(days=4)
+                            # it may seem odd to use last_review_date instead of TODAY here
+                            # but it makes sense
+                            # TODAY is dependent on when we are running the program
+                            # so due dates would *always* end up being in the future
+                            # and last_review_date is set when we practice a card
+                            # so it's the "today" of when we last viewed the card
                             else datetime.datetime.combine(
-                                self.last_review_date.date() + ONE_DAY, MIDNIGHT
+                                self.last_review_date.date()
+                                # so if it's been less than a day, add at least one day
+                                # so if it's been less than two, add at least two
+                                # eventually, we'll round up to 4 and hit the exponential part
+                                + round_timedelta_days_up(self.previous_time_delta),
+                                MIDNIGHT,
                             )
                         ),
                         self.last_review_date + datetime.timedelta(days=365 // 2),
