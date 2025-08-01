@@ -281,10 +281,14 @@ class NormalCard(Card):
                 self.relative_path,
                 self.last_review_date.isoformat() if self.last_review_date else None,
                 self.confidence_score,
-                self.previous_time_delta.seconds if self.previous_time_delta else None,
+                self.previous_time_delta.total_seconds()
+                if self.previous_time_delta
+                else None,
                 self.last_review_date.isoformat() if self.last_review_date else None,
                 self.confidence_score,
-                self.previous_time_delta.seconds if self.previous_time_delta else None,
+                self.previous_time_delta.total_seconds()
+                if self.previous_time_delta
+                else None,
             ),
         )
 
@@ -386,10 +390,14 @@ class ClozeVariant(Card):
                 self.relative_path,
                 self.last_review_date.isoformat() if self.last_review_date else None,
                 self.confidence_score,
-                self.previous_time_delta.seconds if self.previous_time_delta else None,
+                self.previous_time_delta.total_seconds()
+                if self.previous_time_delta
+                else None,
                 self.last_review_date.isoformat() if self.last_review_date else None,
                 self.confidence_score,
-                self.previous_time_delta.seconds if self.previous_time_delta else None,
+                self.previous_time_delta.total_seconds()
+                if self.previous_time_delta
+                else None,
             ),
         )
 
