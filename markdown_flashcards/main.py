@@ -529,7 +529,7 @@ def quiz(directory):
                                 and datetime.datetime.fromisoformat(db_entry[2]),
                                 db_entry[3] and int(db_entry[3]),
                                 db_entry[4]
-                                and datetime.timedelta(seconds=int(db_entry[4])),
+                                and datetime.timedelta(seconds=int(float(db_entry[4]))),
                                 normal_card_match.group("front"),
                                 normal_card_match.group("back"),
                             )
@@ -564,7 +564,7 @@ def quiz(directory):
                                         db_entry[3] and int(db_entry[3]),
                                         db_entry[4]
                                         and datetime.timedelta(
-                                            seconds=int(db_entry[4])
+                                            seconds=int(float(db_entry[4]))
                                         ),
                                         cloze_match.group("front"),
                                         db_entry[1],
