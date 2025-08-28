@@ -16,6 +16,8 @@ from abc import abstractmethod
 import networkx as nx  # type: ignore
 import frontmatter  # type: ignore
 import logging
+import pathlib
+import os
 
 from textual_image.renderable import Image  # type: ignore
 from typing import List, Set, Union
@@ -38,8 +40,15 @@ START_OF_OCCLUSION_REGEX = re.compile(
 MD_IMG_REGEX = re.compile(r"!\[[^\]]*\]\((?P<path>[^\)]*)\)")
 Confirm.prompt_suffix = ""
 
+application_data_directory = pathlib.Path("~/.markdown-flashcards/").expanduser()
+try:
+    os.mkdir(application_data_directory)
+except FileExistsError:
+    pass
 logging.basicConfig(
-    level=logging.DEBUG, filemode="w", filename="markdown-flashcards.log"
+    level=logging.DEBUG,
+    filemode="w",
+    filename=application_data_directory / "markdown-flashcards.log",
 )
 
 
@@ -424,14 +433,12 @@ def normalize_dependency_path(directory: Path, card_path: Path, dependency: str)
 )
 def quiz(directory):
     LOGGER.debug("Starting the quiz.")
-    # TODO: consider getting rid of frontmatter part and using frontmatter library?
     normal_card_regex = re.compile(
-        # actually, back should not contain ---
-        r"---\n(?P<frontmatter>.*)\n---\n(?P<front>.*)\n---\n(?P<back>.*)",
+        r"(?P<front>.*)\n---\n(?P<back>.*)",
         flags=re.DOTALL,
     )
     cloze_regex = re.compile(
-        r"---\n(?P<frontmatter>.*)\n---\n(?P<front>.*)",
+        r"(?P<front>.*)",
         flags=re.DOTALL,
     )
     con = sqlite3.connect(directory / "learning-history.db")
@@ -519,7 +526,9 @@ def quiz(directory):
                     raw_text = fh.read()
                     frontmatter_card = frontmatter.loads(raw_text)
                     if card_type == CardTypes.NORMAL:
-                        normal_card_match = normal_card_regex.match(raw_text)
+                        normal_card_match = normal_card_regex.match(
+                            frontmatter_card.content
+                        )
                         if normal_card_match:
                             card = NormalCard(
                                 relative_path,
@@ -539,7 +548,7 @@ def quiz(directory):
                                 f"Card at {card_path} should be a regular flash card according to DB but does not match the regular expression for a regular flash card. It will not go into the queue. You should either fix the card or remove the database entry."
                             )
                     elif card_type == CardTypes.CLOZE:
-                        cloze_match = cloze_regex.match(raw_text)
+                        cloze_match = cloze_regex.match(frontmatter_card.content)
                         if cloze_match:
                             start_of_occlusion_matches = list(
                                 START_OF_OCCLUSION_REGEX.finditer(raw_text)
@@ -582,21 +591,18 @@ def quiz(directory):
                             LOGGER.error(
                                 f"Card at {card_path} should be a cloze card according to DB but does not match the regular expression for a cloze card. It will not go into the queue. You should either fix the card or remove the database entries for its variants."
                             )
-        else:
+        else:  # i.e. no DB entries for card
             # no entries, so need to read card to create suitable entry
-            logging.debug(f"reading {card_path}")
+            LOGGER.debug(f"reading {card_path}")
             with open(card_path) as fh:
                 raw_text = fh.read()
-                normal_card_match = normal_card_regex.match(raw_text)
-                cloze_match = cloze_regex.match(raw_text)
+                frontmatter_card = frontmatter.loads(raw_text)
+                normal_card_match = normal_card_regex.match(frontmatter_card.content)
+                cloze_match = cloze_regex.match(frontmatter_card.content)
                 if normal_card_match:
-                    frontmatter_card = frontmatter.loads(raw_text)
-                    # frontmatter_card = Frontmatter.read(raw_text)
-                    # metadata = frontmatter_card["attributes"]
                     card = NormalCard(
                         relative_path,
                         frontmatter_card.get("tags", []),
-                        # metadata.get("tags", []),
                         nx.descendants(dependency_graph, relative_path),
                         None,
                         None,
@@ -608,10 +614,6 @@ def quiz(directory):
                     con.commit()
                     priority_queue.put(card)
                 elif cloze_match:
-                    # FIXME: this is repeated from earlier
-                    frontmatter_card = frontmatter.loads(raw_text)
-                    # frontmatter_card = Frontmatter.read(raw_text)
-                    # metadata = frontmatter_card["attributes"]
                     start_of_occlusion_matches = list(
                         START_OF_OCCLUSION_REGEX.finditer(raw_text)
                     )
