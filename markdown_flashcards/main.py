@@ -525,6 +525,9 @@ def quiz(directory):
                 with open(card_path) as fh:
                     raw_text = fh.read()
                     frontmatter_card = frontmatter.loads(raw_text)
+                    LOGGER.debug(
+                        f"dependencies: {frontmatter_card.get('dependencies', [])}"
+                    )
                     if card_type == CardTypes.NORMAL:
                         normal_card_match = normal_card_regex.match(
                             frontmatter_card.content
