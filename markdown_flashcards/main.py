@@ -16,6 +16,7 @@ from abc import abstractmethod
 import networkx as nx  # type: ignore
 import frontmatter  # type: ignore
 import logging
+import coloredlogs
 import pathlib
 import os
 
@@ -34,6 +35,7 @@ MIDNIGHT = datetime.time(0, 0, 0)
 ONE_DAY = datetime.timedelta(days=1)
 ANSWER_OPTIONS = ["Unable to answer", "Hard", "Easy", "Very easy"]
 LOGGER = logging.getLogger(__name__)
+coloredlogs.install(level="WARNING", logger=LOGGER)
 START_OF_OCCLUSION_REGEX = re.compile(
     r"£{c(?P<occlusion_number>\d+):(?P<start_of_occluded_text>)"
 )  # e.g. £{c2: without the }, extra } to avoid confusing the editor in which you are viewing this
@@ -45,10 +47,12 @@ try:
     os.mkdir(application_data_directory)
 except FileExistsError:
     pass
+
 logging.basicConfig(
     level=logging.DEBUG,
     filemode="w",
     filename=application_data_directory / "markdown-flashcards.log",
+    force=True,
 )
 
 
@@ -479,19 +483,22 @@ def quiz(directory):
     dependency_graph = nx.DiGraph()
     for card_path in card_paths:
         LOGGER.debug(f"Adding {card_path} to dependency graph.")
-        card = frontmatter.load(card_path)
-        card_relative_path = card_path.relative_to(directory, walk_up=True)
-        dependency_graph.add_node(str(card_relative_path))
-        for dependency in card.get("dependencies", []):
-            dependency = normalize_dependency_path(directory, card_path, dependency)
-            if dependency not in relative_card_paths:
-                LOGGER.error(
-                    f"{dependency} is mentioned as a dependency of {card_relative_path}, but there is no Markdown file with this path (relative to the overall cards directory. Ignoring the dependency (and potential transitive dependencies)."
-                )
-                LOGGER.warning(f"all relative card paths: {relative_card_paths}")
-            else:
-                dependency_graph.add_node(str(dependency))
-                dependency_graph.add_edge(str(card_relative_path), str(dependency))
+        has_valid_frontmatter = frontmatter.check(card_path)
+        if has_valid_frontmatter:
+            card = frontmatter.load(card_path)
+            card_relative_path = card_path.relative_to(directory, walk_up=True)
+            dependency_graph.add_node(str(card_relative_path))
+            for dependency in card.get("dependencies", []):
+                dependency = normalize_dependency_path(directory, card_path, dependency)
+                if dependency not in relative_card_paths:
+                    LOGGER.error(
+                        f"{dependency} is mentioned as a dependency of {card_relative_path}, but there is no Markdown file with this path (relative to the overall cards directory. Ignoring the dependency (and potential transitive dependencies)."
+                    )
+                else:
+                    dependency_graph.add_node(str(dependency))
+                    dependency_graph.add_edge(str(card_relative_path), str(dependency))
+        else:
+            LOGGER.error(f"Card at {card_path} has invalid frontmatter.")
     LOGGER.debug(f"Dependency graph: {dependency_graph}")
     LOGGER.debug(f"Nodes: {dependency_graph.nodes}")
 
@@ -524,134 +531,146 @@ def quiz(directory):
                 card_type = card_types.pop()
                 with open(card_path) as fh:
                     raw_text = fh.read()
-                    frontmatter_card = frontmatter.loads(raw_text)
-                    LOGGER.debug(
-                        f"dependencies: {frontmatter_card.get('dependencies', [])}"
-                    )
-                    if card_type == CardTypes.NORMAL:
-                        normal_card_match = normal_card_regex.match(
-                            frontmatter_card.content
+                    if frontmatter.checks(raw_text):
+                        frontmatter_card = frontmatter.loads(raw_text)
+                        LOGGER.debug(
+                            f"dependencies: {frontmatter_card.get('dependencies', [])}"
                         )
-                        if normal_card_match:
-                            card = NormalCard(
-                                relative_path,
-                                frontmatter_card.get("tags", []),
-                                nx.descendants(dependency_graph, relative_path),
-                                db_entry[2]
-                                and datetime.datetime.fromisoformat(db_entry[2]),
-                                db_entry[3] and int(db_entry[3]),
-                                db_entry[4]
-                                and datetime.timedelta(seconds=int(float(db_entry[4]))),
-                                normal_card_match.group("front"),
-                                normal_card_match.group("back"),
+                        if card_type == CardTypes.NORMAL:
+                            normal_card_match = normal_card_regex.match(
+                                frontmatter_card.content
                             )
-                            priority_queue.put(card)
-                        else:
-                            LOGGER.error(
-                                f"Card at {card_path} should be a regular flash card according to DB but does not match the regular expression for a regular flash card. It will not go into the queue. You should either fix the card or remove the database entry."
-                            )
-                    elif card_type == CardTypes.CLOZE:
-                        cloze_match = cloze_regex.match(frontmatter_card.content)
-                        if cloze_match:
-                            start_of_occlusion_matches = list(
-                                START_OF_OCCLUSION_REGEX.finditer(raw_text)
-                            )
-                            occlusion_numbers_in_file = {
-                                int(occlusion_match.group("occlusion_number"))
-                                for occlusion_match in start_of_occlusion_matches
-                            }
-                            occlusion_numbers_in_db = {
-                                int(db_entry[1]) for db_entry in db_entries_for_card
-                            }
-                            if occlusion_numbers_in_file == occlusion_numbers_in_db:
-                                cards = [
-                                    ClozeVariant(
-                                        relative_path,
-                                        frontmatter_card.get("tags", []),
-                                        nx.descendants(dependency_graph, relative_path),
-                                        db_entry[2]
-                                        and datetime.datetime.fromisoformat(
-                                            db_entry[2]
-                                        ),
-                                        db_entry[3] and int(db_entry[3]),
-                                        db_entry[4]
-                                        and datetime.timedelta(
-                                            seconds=int(float(db_entry[4]))
-                                        ),
-                                        cloze_match.group("front"),
-                                        db_entry[1],
-                                    )
-                                    for db_entry in db_entries_for_card
-                                ]
-                                for card in cards:
-                                    priority_queue.put(card)
+                            if normal_card_match:
+                                card = NormalCard(
+                                    relative_path,
+                                    frontmatter_card.get("tags", []),
+                                    nx.descendants(dependency_graph, relative_path),
+                                    db_entry[2]
+                                    and datetime.datetime.fromisoformat(db_entry[2]),
+                                    db_entry[3] and int(db_entry[3]),
+                                    db_entry[4]
+                                    and datetime.timedelta(
+                                        seconds=int(float(db_entry[4]))
+                                    ),
+                                    normal_card_match.group("front"),
+                                    normal_card_match.group("back"),
+                                )
+                                priority_queue.put(card)
                             else:
                                 LOGGER.error(
-                                    f"Card at {card_path} does not use the same occlusion numbers {occlusion_numbers_in_db} that are mentioned in the database. Its variants will not go into the queue. You should update the database records or change the file to use precisely the aforementioned occlusion numbers."
+                                    f"Card at {card_path} should be a regular flash card according to DB but does not match the regular expression for a regular flash card. It will not go into the queue. You should either fix the card or remove the database entry."
                                 )
+                        elif card_type == CardTypes.CLOZE:
+                            cloze_match = cloze_regex.match(frontmatter_card.content)
+                            if cloze_match:
+                                start_of_occlusion_matches = list(
+                                    START_OF_OCCLUSION_REGEX.finditer(raw_text)
+                                )
+                                occlusion_numbers_in_file = {
+                                    int(occlusion_match.group("occlusion_number"))
+                                    for occlusion_match in start_of_occlusion_matches
+                                }
+                                occlusion_numbers_in_db = {
+                                    int(db_entry[1]) for db_entry in db_entries_for_card
+                                }
+                                if occlusion_numbers_in_file == occlusion_numbers_in_db:
+                                    cards = [
+                                        ClozeVariant(
+                                            relative_path,
+                                            frontmatter_card.get("tags", []),
+                                            nx.descendants(
+                                                dependency_graph, relative_path
+                                            ),
+                                            db_entry[2]
+                                            and datetime.datetime.fromisoformat(
+                                                db_entry[2]
+                                            ),
+                                            db_entry[3] and int(db_entry[3]),
+                                            db_entry[4]
+                                            and datetime.timedelta(
+                                                seconds=int(float(db_entry[4]))
+                                            ),
+                                            cloze_match.group("front"),
+                                            db_entry[1],
+                                        )
+                                        for db_entry in db_entries_for_card
+                                    ]
+                                    for card in cards:
+                                        priority_queue.put(card)
+                                else:
+                                    LOGGER.error(
+                                        f"Card at {card_path} does not use the same occlusion numbers {occlusion_numbers_in_db} that are mentioned in the database. Its variants will not go into the queue. You should update the database records or change the file to use precisely the aforementioned occlusion numbers."
+                                    )
 
-                        else:
-                            LOGGER.error(
-                                f"Card at {card_path} should be a cloze card according to DB but does not match the regular expression for a cloze card. It will not go into the queue. You should either fix the card or remove the database entries for its variants."
-                            )
+                            else:
+                                LOGGER.error(
+                                    f"Card at {card_path} should be a cloze card according to DB but does not match the regular expression for a cloze card. It will not go into the queue. You should either fix the card or remove the database entries for its variants."
+                                )
+                    else:  # missing valid frontmatter
+                        LOGGER.error(f"Card at {card_path} has invalid frontmatter")
         else:  # i.e. no DB entries for card
             # no entries, so need to read card to create suitable entry
             LOGGER.debug(f"reading {card_path}")
             with open(card_path) as fh:
                 raw_text = fh.read()
-                frontmatter_card = frontmatter.loads(raw_text)
-                normal_card_match = normal_card_regex.match(frontmatter_card.content)
-                cloze_match = cloze_regex.match(frontmatter_card.content)
-                if normal_card_match:
-                    card = NormalCard(
-                        relative_path,
-                        frontmatter_card.get("tags", []),
-                        nx.descendants(dependency_graph, relative_path),
-                        None,
-                        None,
-                        None,
-                        normal_card_match.group("front"),
-                        normal_card_match.group("back"),
+                if frontmatter.checks(raw_text):
+                    frontmatter_card = frontmatter.loads(raw_text)
+                    normal_card_match = normal_card_regex.match(
+                        frontmatter_card.content
                     )
-                    card.upsert(cur)
-                    con.commit()
-                    priority_queue.put(card)
-                elif cloze_match:
-                    start_of_occlusion_matches = list(
-                        START_OF_OCCLUSION_REGEX.finditer(raw_text)
-                    )
-                    if not start_of_occlusion_matches:
+                    cloze_match = cloze_regex.match(frontmatter_card.content)
+                    if normal_card_match:
+                        card = NormalCard(
+                            relative_path,
+                            frontmatter_card.get("tags", []),
+                            nx.descendants(dependency_graph, relative_path),
+                            None,
+                            None,
+                            None,
+                            normal_card_match.group("front"),
+                            normal_card_match.group("back"),
+                        )
+                        card.upsert(cur)
+                        con.commit()
+                        priority_queue.put(card)
+                    elif cloze_match:
+                        start_of_occlusion_matches = list(
+                            START_OF_OCCLUSION_REGEX.finditer(raw_text)
+                        )
+                        if not start_of_occlusion_matches:
+                            print(
+                                f"Cloze card {relative_path} does not contain any occlusions."
+                            )
+                            continue
+                        else:
+                            occlusion_numbers = {
+                                int(occlusion_match.group("occlusion_number"))
+                                for occlusion_match in start_of_occlusion_matches
+                            }
+                            cards = [
+                                ClozeVariant(
+                                    relative_path,
+                                    frontmatter_card.get("tags", []),
+                                    nx.descendants(dependency_graph, relative_path),
+                                    None,
+                                    None,
+                                    None,
+                                    cloze_match.group("front"),
+                                    occlusion_number,
+                                )
+                                for occlusion_number in occlusion_numbers
+                            ]
+                            for card in cards:
+                                priority_queue.put(card)
+                                card.upsert(cur)
+                            con.commit()
+                    else:
                         print(
-                            f"Cloze card {relative_path} does not contain any occlusions."
+                            f"Card {relative_path} does not match either normal or cloze pattern."
                         )
                         continue
-                    else:
-                        occlusion_numbers = {
-                            int(occlusion_match.group("occlusion_number"))
-                            for occlusion_match in start_of_occlusion_matches
-                        }
-                        cards = [
-                            ClozeVariant(
-                                relative_path,
-                                frontmatter_card.get("tags", []),
-                                nx.descendants(dependency_graph, relative_path),
-                                None,
-                                None,
-                                None,
-                                cloze_match.group("front"),
-                                occlusion_number,
-                            )
-                            for occlusion_number in occlusion_numbers
-                        ]
-                        for card in cards:
-                            priority_queue.put(card)
-                            card.upsert(cur)
-                        con.commit()
                 else:
-                    print(
-                        f"Card {relative_path} does not match either normal or cloze pattern."
-                    )
-                    continue
+                    LOGGER.error(f"Card at {card_path} has invalid frontmatter")
     queue_item = priority_queue.get()
     console = Console()
     # console.clear()
