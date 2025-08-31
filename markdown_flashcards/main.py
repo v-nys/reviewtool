@@ -508,82 +508,14 @@ def build_dependency_graph(card_paths, directory, relative_card_paths):
     return dependency_graph
 
 
-def add_new_cards_to_priority_queue(
-    card_path,
-    relative_path,
-    dependency_graph,
-    cur,
-    con,
-    priority_queue,
-):
-    # no entries, so need to read card to create suitable entry
-    LOGGER.debug(f"reading {card_path}")
-    with open(card_path) as fh:
-        raw_text = fh.read()
-        if frontmatter.checks(raw_text):
-            frontmatter_card = frontmatter.loads(raw_text)
-            normal_card_match = NORMAL_CARD_REGEX.match(frontmatter_card.content)
-            cloze_match = CLOZE_REGEX.match(frontmatter_card.content)
-            if normal_card_match:
-                card = NormalCard(
-                    relative_path,
-                    frontmatter_card.get("tags", []),
-                    nx.descendants(dependency_graph, relative_path),
-                    None,
-                    None,
-                    None,
-                    normal_card_match.group("front"),
-                    normal_card_match.group("back"),
-                )
-                card.upsert(cur)
-                con.commit()
-                priority_queue.put(card)
-            elif cloze_match:
-                start_of_occlusion_matches = list(
-                    START_OF_OCCLUSION_REGEX.finditer(raw_text)
-                )
-                if not start_of_occlusion_matches:
-                    print(
-                        f"Cloze card {relative_path} does not contain any occlusions."
-                    )
-                    return
-                else:
-                    occlusion_numbers = {
-                        int(occlusion_match.group("occlusion_number"))
-                        for occlusion_match in start_of_occlusion_matches
-                    }
-                    cards = [
-                        ClozeVariant(
-                            relative_path,
-                            frontmatter_card.get("tags", []),
-                            nx.descendants(dependency_graph, relative_path),
-                            None,
-                            None,
-                            None,
-                            cloze_match.group("front"),
-                            occlusion_number,
-                        )
-                        for occlusion_number in occlusion_numbers
-                    ]
-                    for card in cards:
-                        priority_queue.put(card)
-                        card.upsert(cur)
-                    con.commit()
-            else:
-                print(
-                    f"Card {relative_path} does not match either normal or cloze pattern."
-                )
-                return
-        else:
-            LOGGER.error(f"Card at {card_path} has invalid frontmatter")
-
-
-def add_existing_cards_to_priority_queue(
+def add_cards_to_priority_queue(
     db_entries_for_card,
     card_path,
     relative_path,
     dependency_graph,
     priority_queue,
+    cur,
+    con,
 ):
     # want to access via index but also don't want duplicates, so list({...})
     card_types = list({db_entry[0] for db_entry in db_entries_for_card})
@@ -597,81 +529,113 @@ def add_existing_cards_to_priority_queue(
             f"Card {card_path} is a regular card according to DB, but there are multiple records for it. Only in the case of cloze variants can there be multiple entries for the same card."
         )
     else:
-        db_entry = db_entries_for_card[0]
+        try:
+            db_entry = db_entries_for_card[0]
+            card_type_according_to_db = card_types.pop()
+        except IndexError:
+            db_entry = None
         LOGGER.info(f"DB entry for single card type: {db_entry}")
-        card_type = card_types.pop()
         with open(card_path) as fh:
             raw_text = fh.read()
             if frontmatter.checks(raw_text):
                 frontmatter_card = frontmatter.loads(raw_text)
-                LOGGER.debug(
-                    f"dependencies: {frontmatter_card.get('dependencies', [])}"
-                )
-                if card_type == CardTypes.NORMAL:
-                    normal_card_match = NORMAL_CARD_REGEX.match(
-                        frontmatter_card.content
-                    )
-                    if normal_card_match:
-                        card = NormalCard(
-                            relative_path,
-                            frontmatter_card.get("tags", []),
-                            nx.descendants(dependency_graph, relative_path),
-                            db_entry[2]
-                            and datetime.datetime.fromisoformat(db_entry[2]),
-                            db_entry[3] and int(db_entry[3]),
-                            db_entry[4]
-                            and datetime.timedelta(seconds=int(float(db_entry[4]))),
-                            normal_card_match.group("front"),
-                            normal_card_match.group("back"),
-                        )
-                        priority_queue.put(card)
-                    else:
+                normal_card_match = NORMAL_CARD_REGEX.match(frontmatter_card.content)
+                cloze_match = CLOZE_REGEX.match(frontmatter_card.content)
+                if normal_card_match:
+                    if (
+                        card_type_according_to_db
+                        and card_type_according_to_db != CardTypes.NORMAL
+                    ):
                         LOGGER.error(
-                            f"Card at {card_path} should be a regular flash card according to DB but does not match the regular expression for a regular flash card. It will not go into the queue. You should either fix the card or remove the database entry."
+                            f"Card at {card_path} should be a regular flash card according to DB but does not match the regular expression for a regular flash card. "
+                            + "It will not go into the queue. You should either fix the card or remove the database entry."
                         )
-                elif card_type == CardTypes.CLOZE:
-                    cloze_match = CLOZE_REGEX.match(frontmatter_card.content)
-                    if cloze_match:
-                        start_of_occlusion_matches = list(
-                            START_OF_OCCLUSION_REGEX.finditer(raw_text)
+                        return
+                    card = NormalCard(
+                        relative_path,
+                        frontmatter_card.get("tags", []),
+                        nx.descendants(dependency_graph, relative_path),
+                        db_entry
+                        and db_entry[2]
+                        and datetime.datetime.fromisoformat(db_entry[2]),
+                        db_entry and db_entry[3] and int(db_entry[3]),
+                        db_entry
+                        and db_entry[4]
+                        and datetime.timedelta(seconds=int(float(db_entry[4]))),
+                        normal_card_match.group("front"),
+                        normal_card_match.group("back"),
+                    )
+                    if not db_entries_for_card:
+                        card.upsert(cur)
+                        con.commit()
+                    priority_queue.put(card)
+                elif cloze_match:
+                    if (
+                        card_type_according_to_db
+                        and card_type_according_to_db != CardTypes.CLOZE
+                    ):
+                        LOGGER.error(
+                            f"Card at {card_path} should be a cloze card according to DB but does not match the regular expression for a cloze card. "
+                            + "It will not go into the queue. You should either fix the card or remove the database entry."
                         )
-                        occlusion_numbers_in_file = {
-                            int(occlusion_match.group("occlusion_number"))
-                            for occlusion_match in start_of_occlusion_matches
-                        }
-                        occlusion_numbers_in_db = {
-                            int(db_entry[1]) for db_entry in db_entries_for_card
-                        }
-                        if occlusion_numbers_in_file == occlusion_numbers_in_db:
-                            cards = [
-                                ClozeVariant(
-                                    relative_path,
-                                    frontmatter_card.get("tags", []),
-                                    nx.descendants(dependency_graph, relative_path),
-                                    db_entry[2]
-                                    and datetime.datetime.fromisoformat(db_entry[2]),
-                                    db_entry[3] and int(db_entry[3]),
-                                    db_entry[4]
-                                    and datetime.timedelta(
-                                        seconds=int(float(db_entry[4]))
-                                    ),
-                                    cloze_match.group("front"),
-                                    db_entry[1],
+                        return
+                    start_of_occlusion_matches = list(
+                        START_OF_OCCLUSION_REGEX.finditer(raw_text)
+                    )
+                    occlusion_numbers_in_file = {
+                        int(occlusion_match.group("occlusion_number"))
+                        for occlusion_match in start_of_occlusion_matches
+                    }
+                    occlusion_numbers_in_db = db_entries_for_card and {
+                        int(db_entry[1]) for db_entry in db_entries_for_card
+                    }
+                    if (
+                        not db_entries_for_card
+                        or occlusion_numbers_in_file == occlusion_numbers_in_db
+                    ):
+                        for db_entry, occlusion_number_in_file in zip(
+                            sorted(
+                                db_entries_for_card
+                                or [None] * len(occlusion_numbers_in_file),
+                                key=lambda maybe_entry: (
+                                    maybe_entry and int(db_entry[1])
                                 )
-                                for db_entry in db_entries_for_card
-                            ]
-                            for card in cards:
-                                priority_queue.put(card)
-                        else:
-                            LOGGER.error(
-                                f"Card at {card_path} does not use the same occlusion numbers {occlusion_numbers_in_db} that are mentioned in the database. Its variants will not go into the queue. You should update the database records or change the file to use precisely the aforementioned occlusion numbers."
+                                or 0,
+                            ),
+                            sorted(list(occlusion_numbers_in_file), key=int),
+                        ):
+                            card = ClozeVariant(
+                                relative_path,
+                                frontmatter_card.get("tags", []),
+                                nx.descendants(dependency_graph, relative_path),
+                                db_entry
+                                and db_entry[2]
+                                and datetime.datetime.fromisoformat(db_entry[2]),
+                                db_entry and db_entry[3] and int(db_entry[3]),
+                                db_entry
+                                and db_entry[4]
+                                and datetime.timedelta(seconds=int(float(db_entry[4]))),
+                                cloze_match.group("front"),
+                                str(occlusion_number_in_file),
                             )
+                            priority_queue.put(card)
+                            if not db_entries_for_card:
+                                card.upsert(cur)
+                                con.commit()
 
                     else:
                         LOGGER.error(
-                            f"Card at {card_path} should be a cloze card according to DB but does not match the regular expression for a cloze card. It will not go into the queue. You should either fix the card or remove the database entries for its variants."
+                            f"Card at {card_path} does not use the same occlusion numbers {occlusion_numbers_in_db} that are mentioned in the database. "
+                            + "Its variants will not go into the queue. "
+                            + "You should update the database records or change the file to use precisely the aforementioned occlusion numbers."
                         )
-            else:  # missing valid frontmatter
+
+                else:
+                    LOGGER.error(
+                        f"Card at {card_path} should be a cloze card according to DB but does not match the regular expression for a cloze card. "
+                        + "It will not go into the queue. You should either fix the card or remove the database entries for its variants."
+                    )
+            else:
                 LOGGER.error(f"Card at {card_path} has invalid frontmatter")
 
 
@@ -690,24 +654,15 @@ def add_card_to_priority_queue_and_maybe_db(
     )
     # plural due to Cloze variants
     db_entries_for_card = list(cur.fetchall())
-    LOGGER.info(f"DB entries for card {card_path}: {db_entries_for_card}")
-    if db_entries_for_card:
-        add_existing_cards_to_priority_queue(
-            db_entries_for_card,
-            card_path,
-            relative_path,
-            dependency_graph,
-            priority_queue,
-        )
-    else:  # i.e. no DB entries for card
-        add_new_cards_to_priority_queue(
-            card_path,
-            relative_path,
-            dependency_graph,
-            cur,
-            con,
-            priority_queue,
-        )
+    add_cards_to_priority_queue(
+        db_entries_for_card,
+        card_path,
+        relative_path,
+        dependency_graph,
+        priority_queue,
+        cur,
+        con,
+    )
 
 
 @click.command()
