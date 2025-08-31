@@ -40,6 +40,15 @@ START_OF_OCCLUSION_REGEX = re.compile(
     r"£{c(?P<occlusion_number>\d+):(?P<start_of_occluded_text>)"
 )  # e.g. £{c2: without the }, extra } to avoid confusing the editor in which you are viewing this
 MD_IMG_REGEX = re.compile(r"!\[[^\]]*\]\((?P<path>[^\)]*)\)")
+NORMAL_CARD_REGEX = re.compile(
+    r"(?P<front>.*)\n---\n(?P<back>.*)",
+    flags=re.DOTALL,
+)
+CLOZE_REGEX = re.compile(
+    r"(?P<front>.*)",
+    flags=re.DOTALL,
+)
+
 Confirm.prompt_suffix = ""
 
 application_data_directory = pathlib.Path("~/.markdown-flashcards/").expanduser()
@@ -501,8 +510,6 @@ def build_dependency_graph(card_paths, directory, relative_card_paths):
 
 def add_new_cards_to_priority_queue(
     card_path,
-    normal_card_regex,
-    cloze_regex,
     relative_path,
     dependency_graph,
     cur,
@@ -515,8 +522,8 @@ def add_new_cards_to_priority_queue(
         raw_text = fh.read()
         if frontmatter.checks(raw_text):
             frontmatter_card = frontmatter.loads(raw_text)
-            normal_card_match = normal_card_regex.match(frontmatter_card.content)
-            cloze_match = cloze_regex.match(frontmatter_card.content)
+            normal_card_match = NORMAL_CARD_REGEX.match(frontmatter_card.content)
+            cloze_match = CLOZE_REGEX.match(frontmatter_card.content)
             if normal_card_match:
                 card = NormalCard(
                     relative_path,
@@ -574,11 +581,9 @@ def add_new_cards_to_priority_queue(
 def add_existing_cards_to_priority_queue(
     db_entries_for_card,
     card_path,
-    normal_card_regex,
     relative_path,
     dependency_graph,
     priority_queue,
-    cloze_regex,
 ):
     # want to access via index but also don't want duplicates, so list({...})
     card_types = list({db_entry[0] for db_entry in db_entries_for_card})
@@ -603,7 +608,7 @@ def add_existing_cards_to_priority_queue(
                     f"dependencies: {frontmatter_card.get('dependencies', [])}"
                 )
                 if card_type == CardTypes.NORMAL:
-                    normal_card_match = normal_card_regex.match(
+                    normal_card_match = NORMAL_CARD_REGEX.match(
                         frontmatter_card.content
                     )
                     if normal_card_match:
@@ -625,7 +630,7 @@ def add_existing_cards_to_priority_queue(
                             f"Card at {card_path} should be a regular flash card according to DB but does not match the regular expression for a regular flash card. It will not go into the queue. You should either fix the card or remove the database entry."
                         )
                 elif card_type == CardTypes.CLOZE:
-                    cloze_match = cloze_regex.match(frontmatter_card.content)
+                    cloze_match = CLOZE_REGEX.match(frontmatter_card.content)
                     if cloze_match:
                         start_of_occlusion_matches = list(
                             START_OF_OCCLUSION_REGEX.finditer(raw_text)
@@ -674,10 +679,8 @@ def add_card_to_priority_queue_and_maybe_db(
     card_path,
     directory,
     cur,
-    normal_card_regex,
     dependency_graph,
     priority_queue,
-    cloze_regex,
     con,
 ):
     relative_path = str(card_path.relative_to(directory, walk_up=True))
@@ -692,17 +695,13 @@ def add_card_to_priority_queue_and_maybe_db(
         add_existing_cards_to_priority_queue(
             db_entries_for_card,
             card_path,
-            normal_card_regex,
             relative_path,
             dependency_graph,
             priority_queue,
-            cloze_regex,
         )
     else:  # i.e. no DB entries for card
         add_new_cards_to_priority_queue(
             card_path,
-            normal_card_regex,
-            cloze_regex,
             relative_path,
             dependency_graph,
             cur,
@@ -725,14 +724,6 @@ def add_card_to_priority_queue_and_maybe_db(
 )
 def quiz(directory):
     LOGGER.debug("Starting the quiz.")
-    normal_card_regex = re.compile(
-        r"(?P<front>.*)\n---\n(?P<back>.*)",
-        flags=re.DOTALL,
-    )
-    cloze_regex = re.compile(
-        r"(?P<front>.*)",
-        flags=re.DOTALL,
-    )
     con = sqlite3.connect(directory / "learning-history.db")
     cur = con.cursor()
     LOGGER.debug("Creating table if necessary.")
@@ -775,10 +766,8 @@ def quiz(directory):
             card_path,
             directory,
             cur,
-            normal_card_regex,
             dependency_graph,
             priority_queue,
-            cloze_regex,
             con,
         )
     queue_item = priority_queue.get()
