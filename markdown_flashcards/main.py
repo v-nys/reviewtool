@@ -772,12 +772,25 @@ def organize(directory):
 
     app = Flask(__name__)
 
+    # not working
+    # def escape_string(string):
+    #     escaped_string = (
+    #         string.replace("\\", "\\\\")
+    #         .replace('"', '\\"')
+    #         .replace("\n", "\\n")
+    #         .replace("\r", "\\r")
+    #         .replace("\t", "\\t")
+    #         .replace("\b", "\\b")
+    #         .replace("\f", "\\f")
+    #     )
+    #     return escaped_string
+
     @app.route("/")
     def view_dependency_graph():
         for node in dependency_graph.nodes():
             body = (directory_as_path / node).read_text()
-            body2 = frontmatter.loads(body).content
-            # TODO: retain newlines
+            body2 = frontmatter.loads(body).content.replace("---", "\n\n")
+            # TODO: improve sanitization
             body3 = f"""<
             <TABLE BORDER="0" CELLBORDER="0" CELLPADDING="2">
               <TR>
