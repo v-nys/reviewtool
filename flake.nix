@@ -40,6 +40,8 @@
                 });
               }
             );
+            # TODO: not sure this is how I add graphviz here
+            buildInputs = [ pkgs.${system}.graphviz ];
           };
         }
       );
@@ -69,6 +71,7 @@
 
               })
               poetry
+              graphviz
             ];
           };
         }

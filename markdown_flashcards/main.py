@@ -739,5 +739,35 @@ def quiz(directory):
             break
 
 
+@click.command()
+@click.argument(
+    "directory",
+    required=True,
+    type=click.Path(
+        exists=True,
+        file_okay=False,
+        dir_okay=True,
+        readable=True,
+        path_type=Path,
+    ),
+)
+def organize(directory):
+    card_paths: Set[Path] = set(directory.glob("**/*.md"))
+    relative_card_paths: List[str] = [
+        str(card_path.relative_to(directory, walk_up=True)) for card_path in card_paths
+    ]
+    LOGGER.debug(f"Card paths: {card_paths}")
+    # returns an nx.Digraph
+    dependency_graph = build_dependency_graph(
+        card_paths, directory, relative_card_paths
+    )
+    pydot_graph = nx.nx_pydot.to_pydot(dependency_graph)
+    svg_bytes = pydot_graph.create_svg()
+    with open("/home/vincentn/testgraph.svg", mode="wb") as fh:
+        fh.write(svg_bytes)
+
+    # TODO: start a Flask app
+
+
 if __name__ == "__main__":
     quiz()
