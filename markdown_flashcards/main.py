@@ -776,18 +776,18 @@ def organize(directory):
     def view_dependency_graph():
         for node in dependency_graph.nodes():
             body = (directory_as_path / node).read_text()
-            # TODO: remove frontmatter
+            body2 = frontmatter.loads(body).content
             # TODO: retain newlines
-            body2 = f"""<
+            body3 = f"""<
             <TABLE BORDER="0" CELLBORDER="0" CELLPADDING="2">
               <TR>
                 <TD>🔒</TD>
-                <TD>{SANITIZED_CHARACTERS.sub("", body)}</TD>
+                <TD>{SANITIZED_CHARACTERS.sub("", body2)}</TD>
                 <TD>🔑</TD>
               </TR>
             </TABLE>
             >"""
-            pydot_graph.get_node(node)[0].set_label(body2)
+            pydot_graph.get_node(node)[0].set_label(body3)
             pydot_graph.get_node(node)[0].set_shape("rectangle")
         for edge in dependency_graph.edges():
             pydot_graph.get_edge(edge[0], edge[1])[0].set_label("❌")
