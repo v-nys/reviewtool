@@ -524,7 +524,7 @@ def add_cards_to_priority_queue(
             f"Database specifies multiple types for the card {card_path}. This is not allowed."
         )
         return
-    elif card_types[0] == CardTypes.NORMAL and len(db_entries_for_card) > 1:
+    elif len(db_entries_for_card) > 1 and card_types[0] == CardTypes.NORMAL:
         print(
             f"Card {card_path} is a regular card according to DB, but there are multiple records for it. Only in the case of cloze variants can there be multiple entries for the same card."
         )
@@ -534,6 +534,7 @@ def add_cards_to_priority_queue(
             card_type_according_to_db = card_types.pop()
         except IndexError:
             db_entry = None
+            card_type_according_to_db = None
         LOGGER.info(f"DB entry for single card type: {db_entry}")
         with open(card_path) as fh:
             raw_text = fh.read()
@@ -616,7 +617,7 @@ def add_cards_to_priority_queue(
                                 and db_entry[4]
                                 and datetime.timedelta(seconds=int(float(db_entry[4]))),
                                 cloze_match.group("front"),
-                                str(occlusion_number_in_file),
+                                occlusion_number_in_file,
                             )
                             priority_queue.put(card)
                             if not db_entries_for_card:
