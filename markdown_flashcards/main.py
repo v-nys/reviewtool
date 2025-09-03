@@ -48,6 +48,7 @@ CLOZE_REGEX = re.compile(
     r"(?P<front>.*)",
     flags=re.DOTALL,
 )
+SANITIZED_CHARACTERS = re.compile(r"[^a-zA-Z0-9\s]")
 
 Confirm.prompt_suffix = ""
 
@@ -752,21 +753,48 @@ def quiz(directory):
     ),
 )
 def organize(directory):
+    directory_as_path = Path(directory)
     card_paths: Set[Path] = set(directory.glob("**/*.md"))
     relative_card_paths: List[str] = [
         str(card_path.relative_to(directory, walk_up=True)) for card_path in card_paths
     ]
     LOGGER.debug(f"Card paths: {card_paths}")
-    # returns an nx.Digraph
+    # dependency graph nodes have IDs relative to the main directory
+    # they don't have labels
     dependency_graph = build_dependency_graph(
         card_paths, directory, relative_card_paths
     )
     pydot_graph = nx.nx_pydot.to_pydot(dependency_graph)
-    svg_bytes = pydot_graph.create_svg()
-    with open("/home/vincentn/testgraph.svg", mode="wb") as fh:
-        fh.write(svg_bytes)
+    pydot_graph.set_rankdir("LR")
 
-    # TODO: start a Flask app
+    from flask import Flask
+    from flask import render_template
+
+    app = Flask(__name__)
+
+    @app.route("/")
+    def view_dependency_graph():
+        for node in dependency_graph.nodes():
+            body = (directory_as_path / node).read_text()
+            # TODO: remove frontmatter
+            # TODO: retain newlines
+            body2 = f"""<
+            <TABLE BORDER="0" CELLBORDER="0" CELLPADDING="2">
+              <TR>
+                <TD>🔒</TD>
+                <TD>{SANITIZED_CHARACTERS.sub("", body)}</TD>
+                <TD>🔑</TD>
+              </TR>
+            </TABLE>
+            >"""
+            pydot_graph.get_node(node)[0].set_label(body2)
+            pydot_graph.get_node(node)[0].set_shape("rectangle")
+        for edge in dependency_graph.edges():
+            pydot_graph.get_edge(edge[0], edge[1])[0].set_label("❌")
+        svg = pydot_graph.create_svg().decode("utf-8")
+        return render_template("dependency_graph.html", svg=svg)
+
+    app.run()
 
 
 if __name__ == "__main__":
