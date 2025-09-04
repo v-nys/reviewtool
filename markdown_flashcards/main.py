@@ -789,21 +789,22 @@ def organize(directory):
     def view_dependency_graph():
         for node in dependency_graph.nodes():
             body = (directory_as_path / node).read_text()
-            body2 = frontmatter.loads(body).content.replace("---", "\n\n")
+            content = frontmatter.loads(body).content
+            normal_card_match = NORMAL_CARD_REGEX.match(content)
+            if normal_card_match:
+                body2 = normal_card_match.group("front")
+            else:
+                body2 = content
             # TODO: improve sanitization
-            body3 = f"""<
-            <TABLE BORDER="0" CELLBORDER="0" CELLPADDING="2">
-              <TR>
-                <TD>🔒</TD>
-                <TD>{SANITIZED_CHARACTERS.sub("", body2)}</TD>
-                <TD>🔑</TD>
-              </TR>
-            </TABLE>
-            >"""
+            body3 = SANITIZED_CHARACTERS.sub("", body2).strip()
             pydot_graph.get_node(node)[0].set_label(body3)
-            pydot_graph.get_node(node)[0].set_shape("rectangle")
+            pydot_graph.get_node(node)[0].set_shape("box")
+            pydot_graph.get_node(node)[0].set_margin("0")
+            pydot_graph.get_node(node)[0].set_width("0")
+            pydot_graph.get_node(node)[0].set_nojustify("true")
         for edge in dependency_graph.edges():
             pydot_graph.get_edge(edge[0], edge[1])[0].set_label("❌")
+        pydot_graph.write_dot("/home/vincentn/graphoutput.gv")
         svg = pydot_graph.create_svg().decode("utf-8")
         return render_template("dependency_graph.html", svg=svg)
 

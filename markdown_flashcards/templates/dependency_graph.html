@@ -7,6 +7,48 @@
     {% autoescape false %}
     {{ svg }}
     {% endautoescape %}
+    <script >
+    Array.prototype.max = function() {
+      return Math.max.apply(null, this);
+    };
+    Array.prototype.min = function() {
+      return Math.min.apply(null, this);
+    };
+    let nodes = document.getElementsByClassName("node");
+    for (let node of nodes) {
+        titleElement = node.getElementsByTagName("title")[0];
+        const nodeId = titleElement.textContent;
+        polygonElement = node.getElementsByTagName("polygon")[0];
+        boundingBox = Array.from(new Set(polygonElement.getAttribute("points").split(" ")));
+        const xs = boundingBox.map((pairAsString) => parseFloat(pairAsString.split(",")[0]));
+        const ys = boundingBox.map((pairAsString) => parseFloat(pairAsString.split(",")[1]));
+        const averageY = ys.reduce((acc, current) => acc + current) / ys.length;
+        lockTextElement = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        lockInnerText = document.createTextNode("🔒");
+        lockTextElement.appendChild(lockInnerText);
+        lockTextElement.setAttribute("text-anchor", "middle");
+        lockTextElement.setAttribute("x", xs.min());
+        lockTextElement.setAttribute("y", averageY);
+        lockTextElement.addEventListener("click", () => { alert(`You clicked the lock for ${nodeId}`) });
+        node.appendChild(lockTextElement);
+        keyTextElement = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        keyInnerText = document.createTextNode("🔑");
+        keyTextElement.appendChild(keyInnerText);
+        keyTextElement.setAttribute("text-anchor", "middle");
+        keyTextElement.setAttribute("x", xs.max());
+        keyTextElement.setAttribute("y", averageY);
+        keyTextElement.addEventListener("click", () => { alert(`You clicked the key for ${nodeId}`) });
+        node.appendChild(keyTextElement);
+    };
+    let edges = document.getElementsByClassName("edge");
+    for (let edge of edges) {
+        titleElement = edge.getElementsByTagName("title")[0];
+        connectedNodes = titleElement.textContent.split("->");
+        let xText = edge.getElementsByTagName("text")[0];
+        xText.addEventListener("click", () => { alert(`You clicked the X between ${connectedNodes[0]} and ${connectedNodes[1]}`)});
+    }
+    // TODO: write out an FSM for allowed click order!
+    </script>
 </body>
 
 </html>
