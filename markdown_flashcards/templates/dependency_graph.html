@@ -4,6 +4,10 @@
 <head></head>
 
 <body>
+    <form method="POST" action="/delete-edge" id="edge-deletion-form">
+        <input type="hidden" name="edge-deletion-dependent" id="edge-deletion-dependent" value=""/>
+        <input type="hidden" name="edge-deletion-dependency" id="edge-deletion-dependency" value=""/>
+    </form>
     {% autoescape false %}
     {{ svg }}
     {% endautoescape %}
@@ -23,6 +27,7 @@
         const xs = boundingBox.map((pairAsString) => parseFloat(pairAsString.split(",")[0]));
         const ys = boundingBox.map((pairAsString) => parseFloat(pairAsString.split(",")[1]));
         const averageY = ys.reduce((acc, current) => acc + current) / ys.length;
+
         lockTextElement = document.createElementNS("http://www.w3.org/2000/svg", "text");
         lockInnerText = document.createTextNode("🔒");
         lockTextElement.appendChild(lockInnerText);
@@ -31,6 +36,7 @@
         lockTextElement.setAttribute("y", averageY);
         lockTextElement.addEventListener("click", () => { alert(`You clicked the lock for ${nodeId}`) });
         node.appendChild(lockTextElement);
+
         keyTextElement = document.createElementNS("http://www.w3.org/2000/svg", "text");
         keyInnerText = document.createTextNode("🔑");
         keyTextElement.appendChild(keyInnerText);
@@ -39,15 +45,23 @@
         keyTextElement.setAttribute("y", averageY);
         keyTextElement.addEventListener("click", () => { alert(`You clicked the key for ${nodeId}`) });
         node.appendChild(keyTextElement);
+
     };
     let edges = document.getElementsByClassName("edge");
+    const dependentField = document.getElementById("edge-deletion-dependent");
+    const dependencyField = document.getElementById("edge-deletion-dependency");
     for (let edge of edges) {
-        titleElement = edge.getElementsByTagName("title")[0];
-        connectedNodes = titleElement.textContent.split("->");
-        let xText = edge.getElementsByTagName("text")[0];
-        xText.addEventListener("click", () => { alert(`You clicked the X between ${connectedNodes[0]} and ${connectedNodes[1]}`)});
+        const titleElement = edge.getElementsByTagName("title")[0];
+        const connectedNodes = titleElement.textContent.split("->");
+        const xText = edge.getElementsByTagName("text")[0];
+        console.debug(connectedNodes);
+        xText.addEventListener("click", () => {
+            dependencyField.value = connectedNodes[0];
+            dependentField.value = connectedNodes[1];
+            const form = document.getElementById("edge-deletion-form");
+            form.submit();
+        });
     }
-    // TODO: write out an FSM for allowed click order!
     </script>
 </body>
 

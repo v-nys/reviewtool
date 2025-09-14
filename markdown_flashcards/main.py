@@ -19,6 +19,8 @@ import logging
 import coloredlogs  # type: ignore
 import pathlib
 import os
+import yaml
+import sys
 
 from textual_image.renderable import Image  # type: ignore
 from typing import List, Set, Union
@@ -59,7 +61,7 @@ except FileExistsError:
     pass
 
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     filemode="w",
     filename=application_data_directory / "markdown-flashcards.log",
     force=True,
@@ -477,12 +479,21 @@ class ClozeVariant(Card):
 def normalize_dependency_path(directory: Path, card_path: Path, dependency: str) -> str:
     if not (dependency.startswith("./") or dependency.startswith("../")):
         return dependency
+    elif dependency.startswith("/"):
+        LOGGER.error(
+            f"Dependency of {card_path} starts with a slash. This suggests an absolute path, which is not used here. Only a path relative to the cards folder or relative to the card itself."
+        )
+        sys.exit(1)
     else:
         dependency_relative_to_card = (card_path.parent / dependency).resolve()
         return str(dependency_relative_to_card.relative_to(directory, walk_up=True))
 
 
-def build_dependency_graph(card_paths, directory, relative_card_paths):
+def build_dependent_to_dependency_graph(card_paths, directory, relative_card_paths):
+    """Construct a dependency graph representing how cards are related.
+
+    A card somewhere under `directory` can have dependencies not under `directory`.
+    """
     # need to collect these in first pass because each card specifies all its dependencies
     # that allows __lt__ and __eq__ to be implemented
     dependency_graph = nx.DiGraph()
@@ -495,6 +506,9 @@ def build_dependency_graph(card_paths, directory, relative_card_paths):
             dependency_graph.add_node(str(card_relative_path))
             for dependency in card.get("dependencies", []):
                 dependency = normalize_dependency_path(directory, card_path, dependency)
+                # FIXME: this is wrong
+                # a dependency outside relative_card_paths should be fine, as long as the file exists?
+                # come back to this later
                 if dependency not in relative_card_paths:
                     LOGGER.error(
                         f"{dependency} is mentioned as a dependency of {card_relative_path}, but there is no Markdown file with this path (relative to the overall cards directory. Ignoring the dependency (and potential transitive dependencies)."
@@ -713,7 +727,7 @@ def quiz(directory):
         str(card_path.relative_to(directory, walk_up=True)) for card_path in card_paths
     ]
     LOGGER.debug(f"Card paths: {card_paths}")
-    dependency_graph = build_dependency_graph(
+    dependency_graph = build_dependent_to_dependency_graph(
         card_paths, directory, relative_card_paths
     )
     priority_queue = PriorityQueue()
@@ -759,34 +773,49 @@ def organize(directory):
         str(card_path.relative_to(directory, walk_up=True)) for card_path in card_paths
     ]
     LOGGER.debug(f"Card paths: {card_paths}")
-    # dependency graph nodes have IDs relative to the main directory
-    # they don't have labels
-    dependency_graph = build_dependency_graph(
-        card_paths, directory, relative_card_paths
-    )
-    pydot_graph = nx.nx_pydot.to_pydot(dependency_graph)
-    pydot_graph.set_rankdir("LR")
 
-    from flask import Flask
-    from flask import render_template
+    from flask import Flask, render_template, redirect, request, url_for
 
     app = Flask(__name__)
 
-    # not working
-    # def escape_string(string):
-    #     escaped_string = (
-    #         string.replace("\\", "\\\\")
-    #         .replace('"', '\\"')
-    #         .replace("\n", "\\n")
-    #         .replace("\r", "\\r")
-    #         .replace("\t", "\\t")
-    #         .replace("\b", "\\b")
-    #         .replace("\f", "\\f")
-    #     )
-    #     return escaped_string
+    @app.route("/delete-edge", methods=["POST"])
+    def delete_edge():
+        LOGGER.info(request.form)
+        dependent = request.form["edge-deletion-dependent"]
+        dependent_path = directory_as_path / dependent
+        dependency = request.form["edge-deletion-dependency"]
+        LOGGER.info(f"Should delete edge from {dependency} to {dependent}")
+        dependent_body = (directory_as_path / dependent).read_text()
+        dependent_card = frontmatter.loads(dependent_body)
+        dependent_content = dependent_card.content
+        dependent_metadata = dependent_card.metadata
+        if "dependencies" in dependent_metadata:
+            dependent_metadata["dependencies"] = [
+                d
+                for d in dependent_metadata["dependencies"]
+                if normalize_dependency_path(directory_as_path, dependent_path, d)
+                != dependency
+            ]
+        rewritten_card = f"""---
+{yaml.dump(dependent_metadata)}---
+{dependent_content}
+"""
+        with open(dependent_path, mode="w") as fh:
+            fh.write(rewritten_card)
+        return redirect(url_for("view_dependency_graph"))
 
     @app.route("/")
     def view_dependency_graph():
+        # dependency graph nodes have IDs relative to the main directory
+        # they don't have labels
+        dependency_graph = build_dependent_to_dependency_graph(
+            card_paths, directory, relative_card_paths
+        ).reverse()
+        pydot_graph = nx.nx_pydot.to_pydot(dependency_graph)
+        # RL as edges are from dependent to dependency
+        # makes more sense visually to read from dependency to dependent
+        pydot_graph.set_rankdir("LR")
+
         for node in dependency_graph.nodes():
             body = (directory_as_path / node).read_text()
             content = frontmatter.loads(body).content

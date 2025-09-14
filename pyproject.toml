@@ -24,6 +24,8 @@ textual-image = "^0.8.3"
 coloredlogs = "^15.0.1"
 pydot = "^4.0.1"
 flask = "^3.1.2"
+pyyaml = "^6.0.2"
+types-pyyaml = "^6.0.12.20250822"
 
 [build-system]
 requires = ["poetry-core", "setuptools"]
