@@ -780,11 +780,10 @@ def organize(directory):
 
     @app.route("/add-dependency", methods=["POST"])
     def add_edge():
-        LOGGER.info(request.form)
         dependent = request.form["edge-introduction-dependent"]
         dependent_path = directory_as_path / dependent
         dependency = request.form["edge-introduction-dependency"]
-        LOGGER.info(f"Should add edge from {dependency} to {dependent}")
+        LOGGER.debug(f"Should add edge from {dependency} to {dependent}")
         dependent_body = (directory_as_path / dependent).read_text()
         dependent_card = frontmatter.loads(dependent_body)
         dependent_content = dependent_card.content
@@ -817,11 +816,10 @@ def organize(directory):
 
     @app.route("/delete-edge", methods=["POST"])
     def delete_edge():
-        LOGGER.info(request.form)
         dependent = request.form["edge-deletion-dependent"]
         dependent_path = directory_as_path / dependent
         dependency = request.form["edge-deletion-dependency"]
-        LOGGER.info(f"Should delete edge from {dependency} to {dependent}")
+        LOGGER.debug(f"Should delete edge from {dependency} to {dependent}")
         dependent_body = (directory_as_path / dependent).read_text()
         dependent_card = frontmatter.loads(dependent_body)
         dependent_content = dependent_card.content
