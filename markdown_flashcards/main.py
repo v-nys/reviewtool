@@ -778,6 +778,43 @@ def organize(directory):
 
     app = Flask(__name__)
 
+    @app.route("/add-dependency", methods=["POST"])
+    def add_edge():
+        LOGGER.info(request.form)
+        dependent = request.form["edge-introduction-dependent"]
+        dependent_path = directory_as_path / dependent
+        dependency = request.form["edge-introduction-dependency"]
+        LOGGER.info(f"Should add edge from {dependency} to {dependent}")
+        dependent_body = (directory_as_path / dependent).read_text()
+        dependent_card = frontmatter.loads(dependent_body)
+        dependent_content = dependent_card.content
+        dependent_metadata = dependent_card.metadata
+        if "dependencies" in dependent_metadata:
+            dependency_card_path = directory_as_path / dependency
+            dependent_card_path = directory_as_path / dependent
+            dependency_card_relative_to_dependent_card_folder = str(
+                dependency_card_path.relative_to(
+                    dependent_card_path.parent, walk_up=True
+                )
+            )
+            if not (
+                dependency_card_relative_to_dependent_card_folder.startswith("./")
+                or dependency_card_relative_to_dependent_card_folder.startswith("..")
+            ):
+                dependency_card_relative_to_dependent_card_folder = (
+                    "./" + dependency_card_relative_to_dependent_card_folder
+                )
+            dependent_metadata["dependencies"] += [
+                dependency_card_relative_to_dependent_card_folder
+            ]
+        rewritten_card = f"""---
+{yaml.dump(dependent_metadata)}---
+{dependent_content}
+"""
+        with open(dependent_path, mode="w") as fh:
+            fh.write(rewritten_card)
+        return redirect(url_for("view_dependency_graph"))
+
     @app.route("/delete-edge", methods=["POST"])
     def delete_edge():
         LOGGER.info(request.form)

@@ -4,14 +4,39 @@
 <head></head>
 
 <body>
+
     <form method="POST" action="/delete-edge" id="edge-deletion-form">
         <input type="hidden" name="edge-deletion-dependent" id="edge-deletion-dependent" value=""/>
         <input type="hidden" name="edge-deletion-dependency" id="edge-deletion-dependency" value=""/>
     </form>
+    <form method="POST" action="/add-dependency" id="edge-introduction-form">
+        <input type="hidden" name="edge-introduction-dependent" id="edge-introduction-dependent" value=""/>
+        <input type="hidden" name="edge-introduction-dependency" id="edge-introduction-dependency" value=""/>
+    </form>
     {% autoescape false %}
     {{ svg }}
     {% endautoescape %}
+    <aside id="clicked-items" style="position: fixed; bottom: 2%; left: 2%;" >
+    </aside>
+
     <script >
+    let clickedKey;
+    let clickedLock;
+
+    const clickedItems = document.getElementById("clicked-items");
+    const edgeIntroductionForm = document.getElementById("edge-introduction-form");
+    // TODO: does it make sense to retain clickedKey and clickedLock if I have these?
+    const newEdgeDependency = document.getElementById("edge-introduction-dependency");
+    const newEdgeDependent = document.getElementById("edge-introduction-dependent");
+
+    function resetClicks() {
+        clickedKey = null;
+        clickedLock = null;
+        while (clickedItems.firstChild) {
+          clickedItems.removeChild(clickedItems.firstChild);
+        }
+    }
+    resetClicks();
     Array.prototype.max = function() {
       return Math.max.apply(null, this);
     };
@@ -28,22 +53,56 @@
         const ys = boundingBox.map((pairAsString) => parseFloat(pairAsString.split(",")[1]));
         const averageY = ys.reduce((acc, current) => acc + current) / ys.length;
 
-        lockTextElement = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        const lockTextElement = document.createElementNS("http://www.w3.org/2000/svg", "text");
         lockInnerText = document.createTextNode("🔒");
         lockTextElement.appendChild(lockInnerText);
         lockTextElement.setAttribute("text-anchor", "middle");
         lockTextElement.setAttribute("x", xs.min());
         lockTextElement.setAttribute("y", averageY);
-        lockTextElement.addEventListener("click", () => { alert(`You clicked the lock for ${nodeId}`) });
+        lockTextElement.addEventListener("click", () => {
+          newEdgeDependent.value = nodeId;
+          if (clickedKey) {
+            edgeIntroductionForm.submit();
+          }
+          else if (clickedLock) {
+            alert(`You previously clicked the lock for ${clickedLock}. Discarding that.`);
+            resetClicks();
+            clickedLock = nodeId;
+            const lockReminderTextElement = document.createTextNode(`🔒 ${nodeId}`);
+            clickedItems.appendChild(lockReminderTextElement);
+          }
+          else {
+            clickedLock = nodeId;
+            const lockReminderTextElement = document.createTextNode(`🔒 ${nodeId}`);
+            clickedItems.appendChild(lockReminderTextElement);
+          }
+        });
         node.appendChild(lockTextElement);
 
-        keyTextElement = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        const keyTextElement = document.createElementNS("http://www.w3.org/2000/svg", "text");
         keyInnerText = document.createTextNode("🔑");
         keyTextElement.appendChild(keyInnerText);
         keyTextElement.setAttribute("text-anchor", "middle");
         keyTextElement.setAttribute("x", xs.max());
         keyTextElement.setAttribute("y", averageY);
-        keyTextElement.addEventListener("click", () => { alert(`You clicked the key for ${nodeId}`) });
+        keyTextElement.addEventListener("click", () => {
+          newEdgeDependency.value = nodeId;
+          if (clickedLock) {
+            edgeIntroductionForm.submit();
+          }
+          else if (clickedKey) {
+            alert(`You previously clicked the key for ${clickedKey}. Discarding that.`);
+            resetClicks();
+            clickedKey = nodeId;
+            const keyReminderTextElement = document.createTextNode(`🔑 ${nodeId}`);
+            clickedItems.appendChild(keyReminderTextElement);
+          }
+          else {
+            clickedKey = nodeId;
+            const keyReminderTextElement = document.createTextNode(`🔑 ${nodeId}`);
+            clickedItems.appendChild(keyReminderTextElement);
+          }
+        });
         node.appendChild(keyTextElement);
 
     };
@@ -58,8 +117,8 @@
         xText.addEventListener("click", () => {
             dependencyField.value = connectedNodes[0];
             dependentField.value = connectedNodes[1];
-            const form = document.getElementById("edge-deletion-form");
-            form.submit();
+            const edgeDeletionForm = document.getElementById("edge-deletion-form");
+            edgeDeletionForm.submit();
         });
     }
     </script>
