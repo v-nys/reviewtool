@@ -489,7 +489,9 @@ def normalize_dependency_path(directory: Path, card_path: Path, dependency: str)
         return str(dependency_relative_to_card.relative_to(directory, walk_up=True))
 
 
-def build_dependent_to_dependency_graph(card_paths, directory, relative_card_paths):
+def build_dependent_to_dependency_graph(
+    card_paths, directory, relative_card_paths
+) -> nx.DiGraph:
     """Construct a dependency graph representing how cards are related.
 
     A card somewhere under `directory` can have dependencies not under `directory`.
@@ -682,6 +684,13 @@ def add_card_to_priority_queue_and_maybe_db(
 
 
 @click.command()
+@click.option(
+    "--subfolder_path",
+    required=False,
+    default=".",
+    type=str,
+    help="The folder containing flash cards for organization, relative to the overall folder.",
+)
 @click.argument(
     "directory",
     required=True,
@@ -693,7 +702,11 @@ def add_card_to_priority_queue_and_maybe_db(
         path_type=Path,
     ),
 )
-def quiz(directory):
+def quiz(subfolder_path, directory):
+    long_subfolder_path = directory / subfolder_path
+    LOGGER.info(f"Long subfolder path: {long_subfolder_path}")
+    subfolder_prefix = str(long_subfolder_path).replace(str(directory) + "/", "")
+    LOGGER.info(f"Subfolder prefix: {subfolder_prefix}")
     LOGGER.debug("Starting the quiz.")
     con = sqlite3.connect(directory / "learning-history.db")
     cur = con.cursor()
@@ -730,11 +743,37 @@ def quiz(directory):
     dependency_graph = build_dependent_to_dependency_graph(
         card_paths, directory, relative_card_paths
     )
+
+    unreviewed_ids = set()
+    for node in dependency_graph.nodes:
+        if not subfolder_prefix:
+            pass
+        elif node.startswith(f"{subfolder_prefix}/"):
+            pass  # it is in the subfolder under review
+        elif any(
+            (
+                dependent.startswith(f"{subfolder_prefix}/")
+                for dependent in dependency_graph.predecessors(node)
+            )
+        ):
+            pass
+        else:
+            unreviewed_ids.add(node)
+    # LOGGER.info(f"Unreviewed IDs: {list(unreviewed_ids)}")
+    for unreviewed_id in unreviewed_ids:
+        dependency_graph.remove_node(unreviewed_id)
+    # LOGGER.info(f"Nodes: {list(dependency_graph.nodes)}")
+
     priority_queue = PriorityQueue()
     # card_paths here is based on located MD files
-    for card_path in card_paths:
+    # problem here is card_paths?
+    # thar originally contained absolute PosixPaths
+    # now, it contains
+    LOGGER.info(card_paths)
+    LOGGER.info(directory)
+    for node_id in dependency_graph.nodes:
         add_card_to_priority_queue_and_maybe_db(
-            card_path,
+            Path(directory) / node_id,  # card_path,
             directory,
             cur,
             dependency_graph,
@@ -755,6 +794,13 @@ def quiz(directory):
 
 
 @click.command()
+@click.option(
+    "--subfolder_path",
+    required=False,
+    default=".",
+    type=str,
+    help="The folder containing flash cards for organization, relative to the overall folder.",
+)
 @click.argument(
     "directory",
     required=True,
@@ -766,14 +812,17 @@ def quiz(directory):
         path_type=Path,
     ),
 )
-def organize(directory):
+def organize(subfolder_path, directory):
     directory_as_path = Path(directory)
+    long_subfolder_path = directory / subfolder_path
+    LOGGER.info(f"Long subfolder path: {long_subfolder_path}")
+    subfolder_prefix = str(long_subfolder_path).replace(str(directory) + "/", "")
+    LOGGER.info(f"Subfolder prefix: {subfolder_prefix}")
     card_paths: Set[Path] = set(directory.glob("**/*.md"))
     relative_card_paths: List[str] = [
         str(card_path.relative_to(directory, walk_up=True)) for card_path in card_paths
     ]
     LOGGER.debug(f"Card paths: {card_paths}")
-
     from flask import Flask, render_template, redirect, request, url_for
 
     app = Flask(__name__)
@@ -841,11 +890,34 @@ def organize(directory):
 
     @app.route("/")
     def view_dependency_graph():
-        # dependency graph nodes have IDs relative to the main directory
-        # they don't have labels
+        LOGGER.info("Showing the dependency graph.")
+        # these are from dependency to dependent
+        # so successors are dependents
         dependency_graph = build_dependent_to_dependency_graph(
             card_paths, directory, relative_card_paths
         ).reverse()
+        LOGGER.info(f"Nodes: {list(dependency_graph.nodes)}")
+
+        unreviewed_ids = set()
+        for node in dependency_graph.nodes:
+            if not subfolder_prefix:
+                pass
+            elif node.startswith(f"{subfolder_prefix}/"):
+                pass  # it is in the subfolder under review
+            elif any(
+                (
+                    dependent.startswith(f"{subfolder_prefix}/")
+                    for dependent in dependency_graph.successors(node)
+                )
+            ):
+                pass
+            else:
+                unreviewed_ids.add(node)
+        LOGGER.info(f"Unreviewed IDs: {list(unreviewed_ids)}")
+        for unreviewed_id in unreviewed_ids:
+            dependency_graph.remove_node(unreviewed_id)
+        LOGGER.info(f"Nodes: {list(dependency_graph.nodes)}")
+
         pydot_graph = nx.nx_pydot.to_pydot(dependency_graph)
         # RL as edges are from dependent to dependency
         # makes more sense visually to read from dependency to dependent
