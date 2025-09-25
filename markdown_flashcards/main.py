@@ -687,7 +687,7 @@ def add_card_to_priority_queue_and_maybe_db(
 @click.option(
     "--subfolder_path",
     required=False,
-    default=".",
+    default="",
     type=str,
     help="The folder containing flash cards for organization, relative to the overall folder.",
 )
@@ -705,7 +705,10 @@ def add_card_to_priority_queue_and_maybe_db(
 def quiz(subfolder_path, directory):
     long_subfolder_path = directory / subfolder_path
     LOGGER.info(f"Long subfolder path: {long_subfolder_path}")
-    subfolder_prefix = str(long_subfolder_path).replace(str(directory) + "/", "")
+    if subfolder_path:
+        subfolder_prefix = str(long_subfolder_path).replace(str(directory) + "/", "")
+    else:
+        subfolder_prefix = ""
     LOGGER.info(f"Subfolder prefix: {subfolder_prefix}")
     LOGGER.debug("Starting the quiz.")
     con = sqlite3.connect(directory / "learning-history.db")
@@ -797,7 +800,7 @@ def quiz(subfolder_path, directory):
 @click.option(
     "--subfolder_path",
     required=False,
-    default=".",
+    default="",
     type=str,
     help="The folder containing flash cards for organization, relative to the overall folder.",
 )
@@ -816,7 +819,10 @@ def organize(subfolder_path, directory):
     directory_as_path = Path(directory)
     long_subfolder_path = directory / subfolder_path
     LOGGER.info(f"Long subfolder path: {long_subfolder_path}")
-    subfolder_prefix = str(long_subfolder_path).replace(str(directory) + "/", "")
+    if subfolder_path:
+        subfolder_prefix = str(long_subfolder_path).replace(str(directory) + "/", "")
+    else:
+        subfolder_prefix = ""
     LOGGER.info(f"Subfolder prefix: {subfolder_prefix}")
     card_paths: Set[Path] = set(directory.glob("**/*.md"))
     relative_card_paths: List[str] = [
