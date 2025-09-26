@@ -931,7 +931,8 @@ def organize(subfolder_path, directory):
 
         for node in dependency_graph.nodes():
             body = (directory_as_path / node).read_text()
-            content = frontmatter.loads(body).content
+            frontmatter_card = frontmatter.loads(body)
+            content = frontmatter_card.content
             normal_card_match = NORMAL_CARD_REGEX.match(content)
             if normal_card_match:
                 body2 = normal_card_match.group("front")
@@ -939,7 +940,9 @@ def organize(subfolder_path, directory):
                 body2 = content
             # TODO: improve sanitization
             body3 = SANITIZED_CHARACTERS.sub("", body2).strip()
-            pydot_graph.get_node(node)[0].set_label(body3)
+            gv_label = frontmatter_card.get("graphviz_label", body3)
+            pydot_graph.get_node(node)[0].set_tooltip(content)
+            pydot_graph.get_node(node)[0].set_label(gv_label)
             pydot_graph.get_node(node)[0].set_shape("box")
             pydot_graph.get_node(node)[0].set_margin("0")
             pydot_graph.get_node(node)[0].set_width("0")
