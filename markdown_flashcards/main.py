@@ -255,7 +255,7 @@ class Card(ABC):
 def show_and_evaluate_queue_item(
     queue_item: Card, console, directory, priority_queue, cur, con
 ):
-    LOGGER.info(queue_item)
+    LOGGER.info(f"show and evaluate {queue_item}")
     LOGGER.info(f"Due {queue_item.due_date}")
     if queue_item.is_due_today:
         console.print(f"(From {str(Path(queue_item.relative_path).parent)})")
@@ -298,7 +298,6 @@ def show_and_evaluate_queue_item(
         updated_version.upsert(cur)
         con.commit()
         console.print("")
-        # console.clear()
 
 
 class NormalCard(Card):
@@ -389,6 +388,9 @@ class ClozeVariant(Card):
         )
         self.front = front
         self.variant_number = variant_number
+
+    def __str__(self):
+        return f"Cloze variant {self.variant_number} for {self.relative_path}"
 
     def get_displayed_question(self, topics_directory):
         LOGGER.debug(
@@ -574,7 +576,7 @@ def add_cards_to_priority_queue(
                         frontmatter_card.get("tags", []),
                         nx.descendants(dependency_graph, relative_path),
                         db_entry
-                        and db_entry[2]
+                        and db_entry[2]  # LastReviewDate
                         and datetime.datetime.fromisoformat(db_entry[2]),
                         db_entry and db_entry[3] and int(db_entry[3]),
                         db_entry
@@ -611,23 +613,34 @@ def add_cards_to_priority_queue(
                         not db_entries_for_card
                         or occlusion_numbers_in_file == occlusion_numbers_in_db
                     ):
-                        for db_entry, occlusion_number_in_file in zip(
-                            sorted(
+                        # FIXME: fout zit hier?
+                        sorted_variants_in_db = sorted(
+                            (
                                 db_entries_for_card
-                                or [None] * len(occlusion_numbers_in_file),
-                                key=lambda maybe_entry: (
-                                    maybe_entry and int(db_entry[1])
-                                )
-                                or 0,
+                                or [None] * len(occlusion_numbers_in_file)
                             ),
-                            sorted(list(occlusion_numbers_in_file), key=int),
+                            key=lambda maybe_entry: (
+                                (maybe_entry and int(maybe_entry[1])) or 0
+                            ),
+                        )
+                        sorted_variants_in_file = sorted(
+                            list(occlusion_numbers_in_file), key=int
+                        )
+                        for db_entry, occlusion_number_in_file in zip(
+                            sorted_variants_in_db, sorted_variants_in_file
                         ):
+                            if db_entry and db_entry[1]:
+                                assert int(db_entry[1]) == int(
+                                    occlusion_number_in_file
+                                ), (
+                                    f"Cloze variant number should match variant number in file. Got {db_entry[1]} and {occlusion_number_in_file}. Lists are {sorted_variants_in_file}, {sorted_variants_in_db}."
+                                )
                             card = ClozeVariant(
                                 relative_path,
                                 frontmatter_card.get("tags", []),
                                 nx.descendants(dependency_graph, relative_path),
                                 db_entry
-                                and db_entry[2]
+                                and db_entry[2]  # LastReviewDate
                                 and datetime.datetime.fromisoformat(db_entry[2]),
                                 db_entry and db_entry[3] and int(db_entry[3]),
                                 db_entry
@@ -665,6 +678,7 @@ def add_card_to_priority_queue_and_maybe_db(
     priority_queue,
     con,
 ):
+    LOGGER.info(f"Adding card {card_path} to priority queue.")
     relative_path = str(card_path.relative_to(directory, walk_up=True))
     cur.execute(
         "select CardType, ClozeVariant, LastReviewDate, ConfidenceScore, PreviousTimeDelta from Cards where RelativePath=?",
@@ -753,11 +767,10 @@ def quiz(directory, decks):
             unreviewed_ids.add(node)
     for unreviewed_id in unreviewed_ids:
         dependent_to_dependency_graph.remove_node(unreviewed_id)
-
     priority_queue = PriorityQueue()
     for node_id in dependent_to_dependency_graph.nodes:
         add_card_to_priority_queue_and_maybe_db(
-            Path(directory) / node_id,  # card_path,
+            Path(directory) / node_id,
             directory,
             cur,
             dependent_to_dependency_graph,
