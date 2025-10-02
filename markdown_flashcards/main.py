@@ -684,13 +684,6 @@ def add_card_to_priority_queue_and_maybe_db(
 
 
 @click.command()
-@click.option(
-    "--subfolder_path",
-    required=False,
-    default="",
-    type=str,
-    help="The folder containing flash cards for organization, relative to the overall folder.",
-)
 @click.argument(
     "directory",
     required=True,
@@ -702,15 +695,8 @@ def add_card_to_priority_queue_and_maybe_db(
         path_type=Path,
     ),
 )
-def quiz(subfolder_path, directory):
-    long_subfolder_path = directory / subfolder_path
-    LOGGER.info(f"Long subfolder path: {long_subfolder_path}")
-    if subfolder_path:
-        subfolder_prefix = str(long_subfolder_path).replace(str(directory) + "/", "")
-    else:
-        subfolder_prefix = ""
-    LOGGER.info(f"Subfolder prefix: {subfolder_prefix}")
-    LOGGER.debug("Starting the quiz.")
+@click.argument("decks", required=False, nargs=-1, type=str)
+def quiz(directory, decks):
     con = sqlite3.connect(directory / "learning-history.db")
     cur = con.cursor()
     LOGGER.debug("Creating table if necessary.")
@@ -743,43 +729,38 @@ def quiz(subfolder_path, directory):
         str(card_path.relative_to(directory, walk_up=True)) for card_path in card_paths
     ]
     LOGGER.debug(f"Card paths: {card_paths}")
-    dependency_graph = build_dependent_to_dependency_graph(
+    dependent_to_dependency_graph = build_dependent_to_dependency_graph(
         card_paths, directory, relative_card_paths
     )
 
     unreviewed_ids = set()
-    for node in dependency_graph.nodes:
-        if not subfolder_prefix:
+    for node in dependent_to_dependency_graph.nodes:
+        if not decks:
             pass
-        elif node.startswith(f"{subfolder_prefix}/"):
-            pass  # it is in the subfolder under review
+        elif any(
+            (node.startswith(f"{subfolder_prefix}/") for subfolder_prefix in decks)
+        ):
+            pass
         elif any(
             (
                 dependent.startswith(f"{subfolder_prefix}/")
-                for dependent in dependency_graph.predecessors(node)
+                for subfolder_prefix in decks
+                for dependent in dependent_to_dependency_graph.predecessors(node)
             )
         ):
             pass
         else:
             unreviewed_ids.add(node)
-    # LOGGER.info(f"Unreviewed IDs: {list(unreviewed_ids)}")
     for unreviewed_id in unreviewed_ids:
-        dependency_graph.remove_node(unreviewed_id)
-    # LOGGER.info(f"Nodes: {list(dependency_graph.nodes)}")
+        dependent_to_dependency_graph.remove_node(unreviewed_id)
 
     priority_queue = PriorityQueue()
-    # card_paths here is based on located MD files
-    # problem here is card_paths?
-    # thar originally contained absolute PosixPaths
-    # now, it contains
-    LOGGER.info(card_paths)
-    LOGGER.info(directory)
-    for node_id in dependency_graph.nodes:
+    for node_id in dependent_to_dependency_graph.nodes:
         add_card_to_priority_queue_and_maybe_db(
             Path(directory) / node_id,  # card_path,
             directory,
             cur,
-            dependency_graph,
+            dependent_to_dependency_graph,
             priority_queue,
             con,
         )
