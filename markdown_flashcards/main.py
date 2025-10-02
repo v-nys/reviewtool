@@ -797,13 +797,6 @@ def quiz(subfolder_path, directory):
 
 
 @click.command()
-@click.option(
-    "--subfolder_path",
-    required=False,
-    default="",
-    type=str,
-    help="The folder containing flash cards for organization, relative to the overall folder.",
-)
 @click.argument(
     "directory",
     required=True,
@@ -815,20 +808,12 @@ def quiz(subfolder_path, directory):
         path_type=Path,
     ),
 )
-def organize(subfolder_path, directory):
-    directory_as_path = Path(directory)
-    long_subfolder_path = directory / subfolder_path
-    LOGGER.info(f"Long subfolder path: {long_subfolder_path}")
-    if subfolder_path:
-        subfolder_prefix = str(long_subfolder_path).replace(str(directory) + "/", "")
-    else:
-        subfolder_prefix = ""
-    LOGGER.info(f"Subfolder prefix: {subfolder_prefix}")
+@click.argument("decks", required=False, nargs=-1, type=str)
+def organize(directory, decks: tuple[str, ...]):
     card_paths: Set[Path] = set(directory.glob("**/*.md"))
     relative_card_paths: List[str] = [
         str(card_path.relative_to(directory, walk_up=True)) for card_path in card_paths
     ]
-    LOGGER.debug(f"Card paths: {card_paths}")
     from flask import Flask, render_template, redirect, request, url_for
 
     app = Flask(__name__)
@@ -836,16 +821,16 @@ def organize(subfolder_path, directory):
     @app.route("/add-dependency", methods=["POST"])
     def add_edge():
         dependent = request.form["edge-introduction-dependent"]
-        dependent_path = directory_as_path / dependent
+        dependent_path = directory / dependent
         dependency = request.form["edge-introduction-dependency"]
         LOGGER.debug(f"Should add edge from {dependency} to {dependent}")
-        dependent_body = (directory_as_path / dependent).read_text()
+        dependent_body = (directory / dependent).read_text()
         dependent_card = frontmatter.loads(dependent_body)
         dependent_content = dependent_card.content
         dependent_metadata = dependent_card.metadata
         if "dependencies" in dependent_metadata:
-            dependency_card_path = directory_as_path / dependency
-            dependent_card_path = directory_as_path / dependent
+            dependency_card_path = directory / dependency
+            dependent_card_path = directory / dependent
             dependency_card_relative_to_dependent_card_folder = str(
                 dependency_card_path.relative_to(
                     dependent_card_path.parent, walk_up=True
@@ -872,10 +857,10 @@ def organize(subfolder_path, directory):
     @app.route("/delete-edge", methods=["POST"])
     def delete_edge():
         dependent = request.form["edge-deletion-dependent"]
-        dependent_path = directory_as_path / dependent
+        dependent_path = directory / dependent
         dependency = request.form["edge-deletion-dependency"]
         LOGGER.debug(f"Should delete edge from {dependency} to {dependent}")
-        dependent_body = (directory_as_path / dependent).read_text()
+        dependent_body = (directory / dependent).read_text()
         dependent_card = frontmatter.loads(dependent_body)
         dependent_content = dependent_card.content
         dependent_metadata = dependent_card.metadata
@@ -883,8 +868,7 @@ def organize(subfolder_path, directory):
             dependent_metadata["dependencies"] = [
                 d
                 for d in dependent_metadata["dependencies"]
-                if normalize_dependency_path(directory_as_path, dependent_path, d)
-                != dependency
+                if normalize_dependency_path(directory, dependent_path, d) != dependency
             ]
         rewritten_card = f"""---
 {yaml.dump(dependent_metadata)}---
@@ -896,24 +880,24 @@ def organize(subfolder_path, directory):
 
     @app.route("/")
     def view_dependency_graph():
-        LOGGER.info("Showing the dependency graph.")
-        # these are from dependency to dependent
-        # so successors are dependents
-        dependency_graph = build_dependent_to_dependency_graph(
+        dependency_to_dependent_graph = build_dependent_to_dependency_graph(
             card_paths, directory, relative_card_paths
         ).reverse()
-        LOGGER.info(f"Nodes: {list(dependency_graph.nodes)}")
 
         unreviewed_ids = set()
-        for node in dependency_graph.nodes:
-            if not subfolder_prefix:
+        # filter out anything not under review
+        for node in dependency_to_dependent_graph.nodes:
+            if not decks:
                 pass
-            elif node.startswith(f"{subfolder_prefix}/"):
-                pass  # it is in the subfolder under review
+            elif any(
+                (node.startswith(f"{subfolder_prefix}/") for subfolder_prefix in decks)
+            ):
+                pass
             elif any(
                 (
                     dependent.startswith(f"{subfolder_prefix}/")
-                    for dependent in dependency_graph.successors(node)
+                    for subfolder_prefix in decks
+                    for dependent in dependency_to_dependent_graph.successors(node)
                 )
             ):
                 pass
@@ -921,16 +905,16 @@ def organize(subfolder_path, directory):
                 unreviewed_ids.add(node)
         LOGGER.info(f"Unreviewed IDs: {list(unreviewed_ids)}")
         for unreviewed_id in unreviewed_ids:
-            dependency_graph.remove_node(unreviewed_id)
-        LOGGER.info(f"Nodes: {list(dependency_graph.nodes)}")
+            dependency_to_dependent_graph.remove_node(unreviewed_id)
+        LOGGER.info(f"Nodes: {list(dependency_to_dependent_graph.nodes)}")
 
-        pydot_graph = nx.nx_pydot.to_pydot(dependency_graph)
+        pydot_graph = nx.nx_pydot.to_pydot(dependency_to_dependent_graph)
         # RL as edges are from dependent to dependency
         # makes more sense visually to read from dependency to dependent
         pydot_graph.set_rankdir("LR")
 
-        for node in dependency_graph.nodes():
-            body = (directory_as_path / node).read_text()
+        for node in dependency_to_dependent_graph.nodes():
+            body = (directory / node).read_text()
             frontmatter_card = frontmatter.loads(body)
             content = frontmatter_card.content
             normal_card_match = NORMAL_CARD_REGEX.match(content)
@@ -947,7 +931,7 @@ def organize(subfolder_path, directory):
             pydot_graph.get_node(node)[0].set_margin("0")
             pydot_graph.get_node(node)[0].set_width("0")
             pydot_graph.get_node(node)[0].set_nojustify("true")
-        for edge in dependency_graph.edges():
+        for edge in dependency_to_dependent_graph.edges():
             pydot_graph.get_edge(edge[0], edge[1])[0].set_label("❌")
         pydot_graph.write_dot("/home/vincentn/graphoutput.gv")
         svg = pydot_graph.create_svg().decode("utf-8")
